@@ -14,8 +14,9 @@ experiments_results/
 *.ckpt
 *.bin
 
-# Episode files and upstream model checkouts stay local.
+# Episode files, scene meshes, and upstream model checkouts stay local.
 /datasets/
+/scenes/
 /baselines/models/
 
 .venv/

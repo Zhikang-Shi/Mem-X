@@ -1,12 +1,34 @@
+<div align="center">
+
 # Mem-X
 
-Mem-X: A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation.
+**A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation**
 
-Lifelong home navigation on HM3D. Three levels, four policies, and the same episodes for native navigation and +MemBridge.
+<p align="center">
+  <a href="https://github.com/Zhikang-Shi/Mem-X"><img alt="Code" src="https://img.shields.io/badge/Code-GitHub-181717?logo=github"></a>
+  <a href="#dataset"><img alt="Dataset" src="https://img.shields.io/badge/Dataset-Mem--X-2F6F4E"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue"></a>
+</p>
 
-The repository root is this directory, `Mem-X`. Paths below are relative to that root.
+<p align="center">
+  <a href="https://github.com/Zhikang-Shi/Mem-X"><b>Code</b></a>
+  &nbsp;·&nbsp;
+  <a href="#dataset"><b>Dataset</b></a>
+  &nbsp;·&nbsp;
+  <a href="assets/Mem-X_teaser.pdf"><b>Teaser</b></a>
+</p>
 
-Policies are ETPNav, CMA, Uni-LaViRA, and JanusVLN. +MemBridge is the default. Native runs the same basic tasks and does not read the scene graph, so memory-task scores stay comparable.
+The paper is under review. A public paper link will be added here when it is available.
+
+<img src="assets/teaser.png" alt="Mem-X teaser" width="100%">
+
+</div>
+
+Mem-X asks whether an embodied agent can recall a past target, localize against an earlier episode, and follow a historical route when the instruction depends on memory. Episodes are grouped into sessions on HM3D. Level 1 recalls an object in one shared global frame. Level 2 localizes inside a previously visited region. Level 3 starts outside that memory and then retraces a historical route.
+
+Four policies are evaluated on the same episodes: ETPNav, CMA, Uni-LaViRA, and JanusVLN. +MemBridge is the default. Native navigation uses the same basic tasks and does not read the scene graph, so memory-task scores stay comparable.
+
+Paths below are relative to the repository root.
 
 ## Setup
 
@@ -26,9 +48,11 @@ The launchers read those four directories. Override them with `ETPNAV_ROOT`, `CM
 
 ETPNav and Uni-LaViRA both ship a package named `vlnce_baselines`. Import only one of them in a process.
 
+<a id="dataset"></a>
+
 ### 2. Dataset
 
-`datasets/` and `baselines/models/` are not part of the git repository. Clone the models as above, and place the episode files under `datasets/`.
+`datasets/` and `baselines/models/` are not part of this git repository. Clone the models as above, and place the episode files under `datasets/`. The public dataset URL will be added to the link row when the release archive is online.
 
 ```text
 datasets/level1/level1.json
@@ -49,7 +73,19 @@ datasets/level3/level3_gt.json
 
 `episode_id` is the row id, for example `level1_00800_002_ep1` or `level3_000_ep0`. `task_type` is `basic` or `memory`. Basic tasks build memory and are shared by native and +MemBridge. Success is a final Habitat geodesic of at most 3 m. STOP is not required.
 
-HM3D scenes are not part of `datasets/`. `scene_id` is relative to `SCENES_DIR`, such as `hm3dsem/val/<scan>/<scan>.basis.glb`.
+HM3DSem meshes are not part of this repository. Every episode `scene_id` is relative to `SCENES_DIR` and uses the val split, for example `hm3dsem/val/00800-TEEsavR23oF/TEEsavR23oF.basis.glb`.
+
+Download HM3D v0.2 from the official Matterport repository: [matterport/habitat-matterport-3dresearch](https://github.com/matterport/habitat-matterport-3dresearch). Use the **val** rows: the Habitat archive, the semantic annotations, and the semantic configs. Access is academic and non-commercial. Accept the terms on that page, then download the archives linked there.
+
+Unpack them so the Habitat val tree sits under `hm3dsem/val/`. A local `scenes/` directory at the repository root is a suitable place. It is gitignored.
+
+```text
+scenes/hm3dsem/val/00800-TEEsavR23oF/TEEsavR23oF.basis.glb
+```
+
+```bash
+export SCENES_DIR="$PWD/scenes"
+```
 
 ### 3. Environment
 
@@ -74,7 +110,7 @@ The Docker image `mem-x:latest` already contains all three inside `/opt/conda/en
 `DRY_RUN` defaults to `0` and starts containers. `DRY_RUN=1` prints the plan.
 
 ```bash
-export SCENES_DIR=/path/to/scenes
+export SCENES_DIR="$PWD/scenes"
 export VLM_ENV_FILE="$PWD/vlm.env"
 export MODELS_DIR=/path/to/models
 
