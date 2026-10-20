@@ -1,0 +1,356 @@
+# ===================================================================
+# Configuration for the Trajectory Object Processing Pipeline
+# ===================================================================
+
+# --- Execution Parameters ---
+gpu_id: "7"
+
+debug_mode: true
+# --- Debug & Visualization Configuration (新增) ---
+debug_config:
+  # 是否开启重识别可视化的 Debug 模式
+  save_reid_visualizations: true
+  # Debug 图片保存的子文件夹名称
+  reid_viz_dir: "debug_reid_viz"
+
+# ===================================================================
+# LLM / MLLM Configuration (Switchable)
+# ===================================================================
+llm_config:
+  # [核心开关] 选择模式: "api" (OpenAI/GPT-4o) 或 "local" (vLLM/Qwen)
+  deployment_type: "api" 
+
+  # --- 模式 A: 在线 API 配置 (当 deployment_type: "api" 时生效) ---
+  api_settings:
+    api_type: "openai"
+    api_key: ""
+    api_base_url: "https://api.openai-proxy.org/v1"
+    vision_model: "gpt-4o"       # 处理图片任务
+    text_model: "gpt-4o"         # 处理纯文本任务 (也可以用 gpt-3.5-turbo 省钱)
+    temperature: 0.0
+
+  # --- 模式 B: 本地部署配置 (当 deployment_type: "local" 时生效) ---
+  local_settings:
+    # 定义不同的服务端点
+    endpoints:
+      # primary: # 快模型 (Qwen2-VL-7B)
+      #   api_base_url: "http://localhost:8000/v1"
+      #   api_key: "EMPTY"
+      #   model_name: "qwen2-vl-7b"
+      primary: # 快模型 (Qwen2-VL-7B)
+        api_base_url: "http://localhost:8000/v1"
+        api_key: "EMPTY"
+        model_name: "qwen2-vl"
+        
+      premium: # 大模型 (Qwen2-VL-72B)
+        api_base_url: "http://localhost:8000/v1"
+        api_key: "EMPTY"
+        model_name: "qwen2-vl"
+
+    # 定义任务路由规则 (将任务分配给上面的端点)
+    routing:
+      leaf_description: "primary"      # 任务: 物体描述
+      spatial_reasoning: "primary"     # 任务: 空间关系判断
+      cluster_summary: "premium"       # 任务: 区域功能总结
+      scene_summary: "premium"         # 任务: 全局场景摘要
+      query_parsing: "premium"         # 任务: 检索指令解析
+
+# ===================================================================
+# Dataset & Batch Processing Configuration
+# ===================================================================
+dataset_config:
+  # 数据集根目录
+  root_dir: "/data2/shizk/Datasets/HM3DSem-SQR/val"
+  #root_dir: "/data2/shizk/Datasets/Replica_Processed/val"
+  
+  # 场景选择: ["all"] 表示跑所有，或者指定列表 ["00824-Dd4bFSTQ8gi", "00829-QaLdnwvtxbs"]
+  # build窗口运行的场景列表
+  selected_scenes: [
+        # "office0",
+        # "office1",
+        # "office2",
+        # "office3",
+        # "office4",
+        # "room0",
+        # "room1",
+        # "room2",
+        # "00800-TEEsavR23oF",
+        #"00824-Dd4bFSTQ8gi", 
+
+        "00829-QaLdnwvtxbs",
+        # "00843-DYehNKdT76V",
+        # "00847-bCPU9suPUw9",
+        # "00849-a8BtkwhxdRV",
+
+        # "00861-GLAQ4DNUx5U",
+        # "00862-LT9Jq6dN3Ea",
+        #"00873-bxsVRursffK",
+        #"00877-4ok3usBNeis",
+        # "00890-6s7QHgap2fW",
+        ] 
+  
+  # Episode 选择: ["all"] 或指定列表 ["ep_000"]
+  selected_episodes: ["all"]
+  
+  # 轨迹长度: -1 表示跑完该文件夹下所有图片，正整数表示限制帧数 (如 500)
+  max_frames: -1
+
+  # query数量: -1 表示使用所有 query，正整数表示限制 query 数量 (如 10)
+  max_queries: -1
+  
+  
+# Replica
+# camera_intrinsics:
+#   "w": 1200
+#   "h": 680
+#   "fx": 600.0
+#   "fy": 600.0
+#   "cx": 599.5
+#   "cy": 339.5
+#   "depth_scale": 6553.5
+
+
+
+# 多GPU配置
+multi_gpu:
+  enabled: true
+  sam3_device: "cuda:0"        # SAM3 模型必须在GPU 0，确保跟数据设备相同
+  dinov3_device: "cuda:0"      # DINOv3 放在 GPU 1
+  text_encoder_device: "cuda:0"   # Text Encoder 可以放 CPU     
+
+
+# --- Trajectory Input (这些现在是默认值，会被代码动态覆盖) ---
+trajectory_data:
+  # 下面这些路径会被 main 函数根据 dataset_config 自动替换
+  base_dir: "" 
+  rgb_subdir: "rgb"
+  depth_subdir: "depth"
+  pose_subdir: "pose"
+  filename_padding: 6
+  filename_start_index: 0
+  # filename_prefix 也会自动根据场景ID生成
+
+# --- Output Configuration ---
+main_output_directory: "/data2/shizk/INHerit-SG/output_results"
+# main_output_directory: "/data2/shizk/Seg-RAG/despicable_me/debug_build"
+# --- Semantic Forest Output (新增/修改) ---
+# 不再只依赖单一 json，而是构建森林文件系统
+semantic_forest:
+  nodes_file: "nodes.jsonl"        # 存储节点数据 (Level 1, 2, 3)
+  edges_file: "relations.csv"      # 存储层级关系 (Child -> Parent)
+  # 添加聚类边权重阈值配置
+  clustering_edge_threshold: 0.8  # 可配置的阈值，范围 0.0-1.0
+
+# Object provenance is part of the base mapper contract. Runtime adapters set
+# these IDs explicitly; standalone jobs should override them per episode.
+episode_provenance:
+  schema_version: 1
+  runtime_episode_id: null
+  source_episode_id: null
+  selection_center_weight: 0.4
+  selection_area_weight: 0.6
+
+spatial_reasoning:
+  # 选项: "vlm" (使用视觉大模型) 或 "geometric" (使用3D坐标计算)
+  method: "geometric" 
+  #method: "vlm"
+  
+  # 下面是 VLM 模式需要的参数
+  clustering_distance_threshold: 1.0
+
+# --- Processing Parameters ---
+#predefined_object_classes: "object.refrigerator.microwave.oven.telephone.painting.towel.knife.fork.spoon.plate.book.flower.clothes.chair.table.sofa.bed.pillow.television.plant.cup.bottle"
+predefined_object_classes: "chair.armchair.office chair.sofa.couch.bed.nightstand.table.coffee table.desk.shelf.bookshelf.cabinet.wardrobe.dresser.bench.stool.ottoman.refrigerator.microwave.oven.stove.toaster.coffee machine.kettle.dishwasher.washing machine.dryer.vacuum cleaner.fan.heater.radiator.air conditioner.tv.monitor.computer.laptop.keyboard.mouse.printer.speaker.telephone.clock.lamp.chandelier.sink.toilet.bathtub.shower.towel.toilet paper.soap dispenser.mirror.laundry basket.plant.flower.vase.pot.painting.picture frame.statue.toy.stuffed animal.book.magazine.box.basket.bin.trash can.bag.backpack.luggage.umbrella.bottle.cup.mug.bowl.plate.tray.knife.utensil.pillow.cushion.blanket.curtain.blinds.rug.carpet.mat.clothes.jacket.shoe.bicycle.guitar.piano.fireplace"
+use_predefined_object_classes: true
+reidentification_similarity_threshold: 0.60
+fusion_alpha: 0.8
+filter_edge_detections: false
+
+
+
+# --- RE-ID identification Parameters ---
+re_identification:
+  policy_version: "v8_v7_reid_score_label_v1"
+  # Association is exactly the V7 two-stage policy. Only after V7 accepts a
+  # merge does V8 retain the label with the highest individual SAM3 score.
+  label_update_policy: "highest_individual_sam3_detection_score"
+  visual_similarity_threshold: 0.80
+  spatial_distance_threshold: 2.0  # 硬性距离门槛
+  force_merge_distance_threshold: 1.5 
+  semantic_similarity_threshold: 0.6 
+  generic_object_visual_threshold: 0.60  
+
+
+# --- Keyframe Detection ---
+keyframe_detection:
+  enable_keyframe_detection: true
+  keyframe_similarity_threshold: 0.85
+
+
+# --- Depth-based Pre-filtering ---
+enable_depth_filter: true
+depth_threshold_mm: 5000
+temp_masked_image_name: "temp_masked_for_sam.png"
+
+# ==============================================================================
+# Debug Configuration
+# ==============================================================================
+debug_config:
+  # 是否保存重识别（Re-ID）的对比图
+  # 开启后，会在输出目录的 debug_reid_viz 文件夹中保存新旧物体对比图
+  save_reid_visualizations: true
+
+  # 是否保存发给 MLLM 的带框标注图
+  # 开启后，会在输出目录的 debug_annotated_frames 文件夹中保存画了框和ID的图片
+  # 方便检查发给 GPT/Claude 的图是否清晰，ID是否遮挡
+  save_llm_annotated_frames: true
+
+
+
+use_llm_for_weight: true
+
+
+feature_extractor:
+  type: "dinov3" #或 "dinov2"
+  # 你的 DINOv3 本地仓库路径 (对应示例中的 DINOV3_LOCATION)
+  # 如果使用 dinov2，则可以改为 "facebook/dinov2-base"
+  model_name: "dinov3_vitl16" #或 "dinov2_vitg14_reg"
+  repo_dir: "/data2/shizkzk/dinov3"  # 或者 "/data2/fyd/temp_install/dinov2"
+  #weights_path: "/data2/lavira-team/SegRAG/checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
+  weights_path: "/data2/shizk/models/facebook/dinov3"
+  device: "cuda"
+
+# config.yaml 示例
+segmentation_module:
+  type: "sam3"
+  # SAM 3 权重路径
+  checkpoint_path: "/data2/shizk/models/facebook/sam3/sam3.pt"
+  # 如果需要指定 bpe 路径，也可以加在这里，不加则用默认
+  # bpe_path: "..." 
+  box_threshold: 0.50
+  # 调试输出配置
+  save_viz_image: True  # 是否保存可视化覆盖图
+  save_json: True       # 是否保存 JSON
+  category_batch_size: 10  # V8 fixed contract: at most 10 categories per batch
+
+map_config:
+  # 关键：深度射线只负责 free，不要把命中点当墙
+  raycast_update_occupied: false
+
+  # 射线采样稀一点，避免噪声
+  raycast_stride: 6
+  hit_stride: 3
+
+  # 门需要多次观测才确认，避免 door 满天星
+  door_hit_thresh: 6
+  door_hit_inc: 1
+
+room_segmentation:
+  # 关键：先关 bottleneck（窄通道），只用门切
+  use_bottleneck: false
+  use_doors: true
+
+  door_band_m: 0.25
+  min_cut_area_px: 40
+
+  local_window_m: 20.0
+  switch_confirm_k: 3
+  room_match_dist_m: 1.5
+
+  min_kf_before_split: 5
+  min_switch_margin_px: 5
+
+
+
+
+
+
+
+
+
+
+# predefined_object_classes: "object.chair.sofa.bed.nightstand.table.shelf.cabinet.wardrobe.dresser.bench.stool.ottoman.refrigerator.microwave.oven.stove.toaster.coffee machine.kettle.dishwasher.washing machine.dryer.vacuum cleaner.fan.heater.radiator.air conditioner.tv.monitor.computer.laptop.keyboard.mouse.printer.speaker.telephone.clock.lamp.chandelier.sink.toilet.bathtub.shower.towel.toilet paper.soap dispenser.mirror.laundry basket.plant.vase.pot.painting.statue.toy.book.box.basket.trash can.bag.backpack.luggage.umbrella.bottle.cup.bowl.plate.tray.knife.pillow.cushion.blanket.curtain.blinds.rug.mat.clothes.shoe.bicycle.guitar.piano.fireplace"
+# predefined_object_classes: "chair.sofa.bed.table.shelf.cabinet.bench.stool.refrigerator.microwave.oven.stove.toaster.coffee machine.kettle.dishwasher.washing machine.dryer.vacuum cleaner.fan.heater.air conditioner.tv.laptop.keyboard.mouse.printer.speaker.telephone.clock.lamp.sink.toilet.bathtub.shower.towel.toilet paper.soap dispenser.mirror.plant.pot.painting.statue.toy.book.box.basket.trash can.bag.umbrella.bottle.cup.bowl.plate.tray.knife.pillow.blanket.curtain.rug.clothes.shoe.bicycle.guitar.piano.fireplace"
+# predefined_object_classes: "chair.sofa.bed.table.shelf.cabinet.refrigerator.microwave.stove.coffee machine.dishwasher.washing machine.vacuum cleaner.fan.air conditioner.tv.laptop.printer.speaker.telephone.clock.lamp.sink.toilet.bathtub.towel.mirror.plant.painting.statue.toy.book.box.trash can.bag.umbrella.bottle.cup.bowl.plate.knife.pillow.blanket.curtain.rug.clothes.shoe.bicycle.guitar.piano.fireplace"
+
+
+
+# --- Model Paths ---
+# feature_extractor:
+#   type: "dinov3"
+#   # 你的 DINOv3 本地仓库路径 (对应示例中的 DINOV3_LOCATION)
+#   repo_dir: "/data2/fyd/snap/dinov3" 
+#   # 权重文件路径 (对应示例中的 WEIGHTS_PATH)
+#   weights_path: "/data2/fyd/snap/dinov3/models/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
+#   # 模型名称 (如 dinov3_vitl16)
+#   model_name: "dinov3_vitl16"
+#   device: "cuda"
+
+
+# selected_scenes: [
+  #           # "00800-TEEsavR23oF",
+  #           # "00802-wcojb4TFT35",
+  #           # "00803-k1cupFYWXJ6",
+  #           # "00808-y9hTuugGdiq",
+  #           # "00810-CrMo8WxCyVb",
+  #           # "00813-svBbv1Pavdk",
+  #           # "00814-p53SfW6mjZe",
+  #           # "00815-h1zeeAwLh9Z",
+  #           # "00820-mL8ThkuaVTM",
+            
+  #           "00824-Dd4bFSTQ8gi", 
+  #           #"00827-BAbdmeyTvMZ",
+
+  #           # "00829-QaLdnwvtxbs",
+  #           # "00843-DYehNKdT76V",
+  #           # "00844-q5QZSEeHe5g",
+           
+            
+  #           # "00847-bCPU9suPUw9",
+  #           # "00848-ziup5kvtCCR",
+  #           # "00849-a8BtkwhxdRV",
+  #           # "00853-5cdEh9F2hJL",
+  #           # "00869-MHPLjHsuG27",
+
+  #           # "00861-GLAQ4DNUx5U",
+  #           # "00862-LT9Jq6dN3Ea",
+  #           # "00871-VBzV5z6i1WS",
+  #           # "00873-bxsVRursffK",
+  #           # "00876-mv2HUxq3B53",
+  #           # "00877-4ok3usBNeis",
+  #           # "00880-Nfvxx8J5NCo",
+          
+  #           # "00890-6s7QHgap2fW",
+  #           # "00891-cvZr5TUy5C5",
+            
+
+  #           # build over
+            
+  #           # build2
+           
+  #           # "00821-eF36g7L6Z9M",
+
+  #           # zhongduan3
+  #           #"00823-7MXmsvcQjpJ",
+            
+           
+  #           # zhongduan2
+  #           #"00831-yr17PDCnDDW",
+
+
+  #           # build
+  #           #"00832-qyAac8rV8Zk",
+
+  #           # gen_datd 
+  #           #"00835-q3zU7Yy5E5s",
+
+  #           # hovsg-2
+  #           #"00839-zt1RVoi7PcG",
+            
+          
+  #          # build3
+  #          # "00878-XB4GS9ShBRE",
+
+  #          # duankou1 
+  #         #"00894-HY1NcmCgn3n"
+  #           ]

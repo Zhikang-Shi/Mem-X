@@ -1,0 +1,20 @@
+# Protocol RGB-D for ETPNav L3 EP0 pose replay into memory_module.
+# Same camera as Janus / CMA L3 (960x720, 90 deg, 1.2 m, depth_max 4 m).
+habitat:
+  simulator:
+    agents:
+      main_agent:
+        height: 1.2
+        sim_sensors:
+          rgb_sensor:
+            position: [0.0, 1.2, 0.0]
+            width: 960
+            height: 720
+            hfov: 90
+          depth_sensor:
+            position: [0.0, 1.2, 0.0]
+            width: 960
+            height: 720
+            hfov: 90
+            min_depth: 0.0
+            max_depth: 4.0

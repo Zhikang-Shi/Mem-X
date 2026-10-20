@@ -1,0 +1,22 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Shell syntax
+        run: bash -n scripts/level1/level1.sh scripts/level2/level2.sh scripts/level3/level3.sh scripts/level1/level1_membridge.sh scripts/level1/level1_native.sh scripts/level2/level2_membridge.sh scripts/level2/level2_native.sh scripts/level3/level3_membridge.sh scripts/level3/level3_native.sh
