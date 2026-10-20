@@ -6,14 +6,14 @@
 
 <p align="center">
   <a href="https://github.com/Zhikang-Shi/Mem-X"><img alt="Code" src="https://img.shields.io/badge/Code-GitHub-181717?logo=github"></a>
-  <a href="#dataset"><img alt="Dataset" src="https://img.shields.io/badge/Dataset-Mem--X-2F6F4E"></a>
+  <a href="https://huggingface.co/datasets/KangThomas/Mem-X/tree/main"><img alt="Dataset" src="https://img.shields.io/badge/Dataset-Hugging%20Face-FFD21E"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue"></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/Zhikang-Shi/Mem-X"><b>Code</b></a>
   &nbsp;·&nbsp;
-  <a href="#dataset"><b>Dataset</b></a>
+  <a href="https://huggingface.co/datasets/KangThomas/Mem-X/tree/main"><b>Dataset</b></a>
   &nbsp;·&nbsp;
   <a href="assets/Mem-X_teaser.pdf"><b>Teaser</b></a>
 </p>
@@ -26,7 +26,7 @@ The paper is under review. A public paper link will be added here when it is ava
 
 Mem-X asks whether an embodied agent can recall a past target, localize against an earlier episode, and follow a historical route when the instruction depends on memory. Episodes are grouped into sessions on HM3D. Level 1 recalls an object in one shared global frame. Level 2 localizes inside a previously visited region. Level 3 starts outside that memory and then retraces a historical route.
 
-Four policies are evaluated on the same episodes: ETPNav, CMA, Uni-LaViRA, and JanusVLN. +MemBridge is the default. Native navigation uses the same basic tasks and does not read the scene graph, so memory-task scores stay comparable.
+Four policies are evaluated on the same episodes: [ETPNav](https://github.com/MarSaKi/ETPNav), [CMA](https://github.com/jacobkrantz/VLN-CE), [Uni-LaViRA](https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code), and [JanusVLN](https://github.com/MIV-XJTU/JanusVLN). +MemBridge is the default. Native navigation uses the same basic tasks and does not read the scene graph, so memory-task scores stay comparable.
 
 Paths below are relative to the repository root.
 
@@ -52,7 +52,11 @@ ETPNav and Uni-LaViRA both ship a package named `vlnce_baselines`. Import only o
 
 ### 2. Dataset
 
-`datasets/` and `baselines/models/` are not part of this git repository. Clone the models as above, and place the episode files under `datasets/`. The public dataset URL will be added to the link row when the release archive is online.
+`datasets/` and `baselines/models/` are not part of this git repository. Download the episodes from [KangThomas/Mem-X](https://huggingface.co/datasets/KangThomas/Mem-X/tree/main) into `datasets/`.
+
+```bash
+hf download KangThomas/Mem-X --repo-type dataset --local-dir datasets
+```
 
 ```text
 datasets/level1/level1.json
