@@ -1,8 +1,8 @@
 <div align="center">
 
-# Mem-X
+# Mem-X:A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation
 
-**A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation**
+
 
 <p align="center">
   <a href="https://github.com/Zhikang-Shi/Mem-X"><img alt="Code" src="https://img.shields.io/badge/Code-GitHub-181717?logo=github"></a>
