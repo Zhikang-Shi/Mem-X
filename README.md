@@ -28,13 +28,27 @@ Mem-X asks whether an embodied agent can recall a past target, localize against 
 
 Four policies are evaluated on the same episodes: [ETPNav](https://github.com/MarSaKi/ETPNav), [CMA](https://github.com/jacobkrantz/VLN-CE), [Uni-LaViRA](https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code), and [JanusVLN](https://github.com/MIV-XJTU/JanusVLN). +MemBridge is the default. Native navigation uses the same basic tasks and does not read the scene graph, so memory-task scores stay comparable.
 
-Paths below are relative to the repository root.
+Clone this repository first. Paths below are relative to that root.
+
+```bash
+git clone https://github.com/Zhikang-Shi/Mem-X.git
+cd Mem-X
+```
+
+After that clone, two directories are still empty. Put the four model checkouts in `baselines/models/`, and put the episode files in `datasets/`.
 
 ## Setup
 
 ### 1. Models
 
-Clone the four model codebases into `baselines/models`.
+Place each model here:
+
+```text
+baselines/models/ETPNav
+baselines/models/CMA
+baselines/models/JanusVLN
+baselines/models/Uni-LaViRA
+```
 
 ```bash
 git clone https://github.com/MarSaKi/ETPNav.git baselines/models/ETPNav
@@ -44,7 +58,7 @@ git clone https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code.git base
 mv baselines/models/uni-lavira-code/sim-code/habitat baselines/models/Uni-LaViRA
 ```
 
-The launchers read those four directories. Override them with `ETPNAV_ROOT`, `CMA_ROOT`, `UNI_ROOT` or `UNILAVIRA_ROOT`, and `JANUS_ROOT` only when the checkouts live somewhere else.
+The launchers read those four directories. Override them with `ETPNAV_ROOT`, `CMA_ROOT`, `UNI_ROOT` or `UNILAVIRA_ROOT`, and `JANUS_ROOT` only when a checkout lives somewhere else.
 
 ETPNav and Uni-LaViRA both ship a package named `vlnce_baselines`. Import only one of them in a process.
 
@@ -52,22 +66,27 @@ ETPNav and Uni-LaViRA both ship a package named `vlnce_baselines`. Import only o
 
 ### 2. Dataset
 
-`datasets/` and `baselines/models/` are not part of this git repository. Download the episodes from [KangThomas/Mem-X](https://huggingface.co/datasets/KangThomas/Mem-X/tree/main) into `datasets/`.
+`datasets/` is not part of the git repository. Download the episodes from [KangThomas/Mem-X](https://huggingface.co/datasets/KangThomas/Mem-X/tree/main) into `datasets/`.
 
 ```bash
 hf download KangThomas/Mem-X --repo-type dataset --local-dir datasets
 ```
 
+The files land here:
+
 ```text
 datasets/level1/level1.json
 datasets/level1/level1_gt.json
+datasets/level1/protocol_level1.json
 datasets/level2/level2.json
 datasets/level2/level2_gt.json
+datasets/level2/protocol_level2.json
 datasets/level3/level3.json
 datasets/level3/level3_gt.json
+datasets/level3/protocol_level3.json
 ```
 
-`levelN.json` holds the episodes. `levelN_gt.json` is keyed by `episode_id` and stores `locations`, `actions`, and `forward_steps`. Each level also has `datasets/levelN/protocol.json`. Habitat role splits live under `datasets/levelN/habitat/` and are rebuilt by `scripts/materialize_habitat_splits.py`. The shared field list is [`datasets/EPISODE_SCHEMA.json`](datasets/EPISODE_SCHEMA.json).
+`levelN.json` holds the episodes. `levelN_gt.json` is keyed by `episode_id` and stores `locations`, `actions`, and `forward_steps`. `protocol_levelN.json` is the evaluation protocol for that level. Habitat role splits live under `datasets/levelN/habitat/` and are rebuilt by `scripts/materialize_habitat_splits.py`. The shared field list is [`datasets/EPISODE_SCHEMA.json`](datasets/EPISODE_SCHEMA.json).
 
 | Level | Roles | Episodes |
 |---|---|---|
@@ -100,18 +119,17 @@ conda env create -f environment.yml
 conda activate memx
 ```
 
-That file does not install Habitat. After it finishes, install these two from source at version 0.1.7:
+That file does not install Habitat. Install Habitat-Sim and Habitat-Lab at tag `v0.1.7`, following the official instructions:
 
-- habitat-lab, imported as `habitat`
-- habitat-sim, imported as `habitat_sim`
+- Website: [aihabitat.org](https://aihabitat.org/)
+- Habitat-Sim: [facebookresearch/habitat-sim](https://github.com/facebookresearch/habitat-sim/tree/v0.1.7)
+- Habitat-Lab: [facebookresearch/habitat-lab](https://github.com/facebookresearch/habitat-lab/tree/v0.1.7)
 
-Magnum is the Python binding produced by that habitat-sim build. The image records it as `magnum==0.0.0`. There is no separate Magnum package to install, and `pip install magnum` will not provide it.
-
-The Docker image `mem-x:latest` already contains all three inside `/opt/conda/envs/lavira`. Scripts call that interpreter. Image pull and mounts are in [`ENVIRONMENT.md`](ENVIRONMENT.md).
+The project imports these packages as `habitat_sim` and `habitat`. Magnum is the Python binding produced by the Habitat-Sim build. There is no separate Magnum package to install.
 
 ## Running
 
-`DRY_RUN` defaults to `0` and starts containers. `DRY_RUN=1` prints the plan.
+`DRY_RUN` defaults to `0` and runs the evaluation. `DRY_RUN=1` prints the plan.
 
 ```bash
 export SCENES_DIR="$PWD/scenes"
@@ -125,7 +143,7 @@ bash scripts/level3/level3.sh cma
 
 `PIPELINE` is `membridge` (also `+membridge` or `plus`) or `native` (also `original`). `MODEL` is `etpnav`, `cma`, `unilavira`, or `janus`. The first positional argument sets the model as well.
 
-Janus launchers still mount a streamvln env through `JANUS_ENV`. JanusVLN_Extra weights and the ETPNav checkpoint stay outside this repository.
+Janus still needs a streamvln environment, passed with `JANUS_ENV`. JanusVLN_Extra weights and the ETPNav checkpoint stay outside this repository.
 
 ### API endpoint and key
 
@@ -155,7 +173,7 @@ baselines/runners/      level runners and stage.py
 baselines/models/       ETPNav, CMA, Uni-LaViRA, JanusVLN
 membridge/              scene graph, navigation, maps, retrieval, VLM, exploration, localization
 scripts/levelN/         levelN.sh, levelN_membridge.sh, levelN_native.sh
-datasets/levelN/        episodes, ground truth, protocol
+datasets/levelN/        episodes, ground truth, protocol_levelN.json
 environment.yml         conda env memx
 ```
 
