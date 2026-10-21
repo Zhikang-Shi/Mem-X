@@ -1,56 +1,63 @@
 <div align="center">
 
-# Mem-X:A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation
+# Mem-X
 
-
+**A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation**
 
 <p align="center">
+  <img alt="Paper: coming soon" src="https://img.shields.io/badge/Paper-Coming%20Soon-b31b1b">
   <a href="https://github.com/Zhikang-Shi/Mem-X"><img alt="Code" src="https://img.shields.io/badge/Code-GitHub-181717?logo=github"></a>
   <a href="https://huggingface.co/datasets/KangThomas/Mem-X/tree/main"><img alt="Dataset" src="https://img.shields.io/badge/Dataset-Hugging%20Face-FFD21E"></a>
+  <a href="assets/Mem-X_teaser.pdf"><img alt="Teaser" src="https://img.shields.io/badge/Teaser-PDF-red"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue"></a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/Zhikang-Shi/Mem-X"><b>Code</b></a>
-  &nbsp;·&nbsp;
-  <a href="https://huggingface.co/datasets/KangThomas/Mem-X/tree/main"><b>Dataset</b></a>
-  &nbsp;·&nbsp;
-  <a href="assets/Mem-X_teaser.pdf"><b>Teaser</b></a>
-</p>
+*The paper is under review. A public paper link will be added when available.*
 
-The paper is under review. A public paper link will be added here when it is available.
-
-<img src="assets/teaser.png" alt="Mem-X teaser" width="100%">
+<img src="assets/teaser.png" alt="Overview of the Mem-X benchmark" width="100%">
 
 </div>
 
-Mem-X asks whether an embodied agent can recall a past target, localize against an earlier episode, and follow a historical route when the instruction depends on memory. Episodes are grouped into sessions on HM3D. Level 1 recalls an object in one shared global frame. Level 2 localizes inside a previously visited region. Level 3 starts outside that memory and then retraces a historical route.
+Mem-X evaluates whether an embodied agent can use memory across episodes to recall a past target, localize against an earlier episode, and follow a historical route.
 
-Four policies are evaluated on the same episodes: [ETPNav](https://github.com/MarSaKi/ETPNav), [CMA](https://github.com/jacobkrantz/VLN-CE), [Uni-LaViRA](https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code), and [JanusVLN](https://github.com/MIV-XJTU/JanusVLN). +MemBridge is the default. Native navigation uses the same basic tasks and does not read the scene graph, so memory-task scores stay comparable.
+The benchmark evaluates four navigation policies on the same episodes: [ETPNav](https://github.com/MarSaKi/ETPNav), [CMA](https://github.com/jacobkrantz/VLN-CE), [Uni-LaViRA](https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code), and [JanusVLN](https://github.com/MIV-XJTU/JanusVLN). Each policy can run with MemBridge or through its native navigation pipeline.
 
-Clone this repository first. Paths below are relative to that root.
-
-```bash
-git clone https://github.com/Zhikang-Shi/Mem-X.git
-cd Mem-X
-```
-
-After that clone, two directories are still empty. Put the four model checkouts in `baselines/models/`, and put the episode files in `datasets/`.
+**Contents:** [Setup](#setup) · [Running](#running) · [Repository layout](#repository-layout) · [Contributing](#contributing) · [License](#license)
 
 ## Setup
 
-### 1. Models
+Run the commands below from the repository root. Model checkouts, datasets, scene meshes, and model weights are stored locally and are not included in this repository.
 
-Place each model here:
+### 1. Conda environment
+
+Create the Conda environment using the pinned dependencies in [environment.yml](environment.yml):
+
+```bash
+conda env create -f environment.yml
+conda activate memx
+```
+
+The environment uses Python **3.8.20**, PyTorch **2.4.1+cu118**, and Transformers **4.46.3**. Habitat is installed separately:
+
+- [Habitat-Sim v0.1.7](https://github.com/facebookresearch/habitat-sim/tree/v0.1.7)
+- [Habitat-Lab v0.1.7](https://github.com/facebookresearch/habitat-lab/tree/v0.1.7)
+
+Follow the official installation instructions linked from [aihabitat.org](https://aihabitat.org/). The packages are imported as `habitat_sim` and `habitat`. The Habitat-Sim build also provides the Magnum Python bindings.
+
+### 2. Baseline models
+
+Clone the baseline repositories into `baselines/models/`:
 
 ```text
-baselines/models/ETPNav
-baselines/models/CMA
-baselines/models/JanusVLN
-baselines/models/Uni-LaViRA
+baselines/models/
+├── ETPNav/
+├── CMA/
+├── JanusVLN/
+└── Uni-LaViRA/
 ```
 
 ```bash
+mkdir -p baselines/models
 git clone https://github.com/MarSaKi/ETPNav.git baselines/models/ETPNav
 git clone https://github.com/jacobkrantz/VLN-CE.git baselines/models/CMA
 git clone https://github.com/MIV-XJTU/JanusVLN.git baselines/models/JanusVLN
@@ -58,49 +65,77 @@ git clone https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code.git base
 mv baselines/models/uni-lavira-code/sim-code/habitat baselines/models/Uni-LaViRA
 ```
 
-The launchers read those four directories. Override them with `ETPNAV_ROOT`, `CMA_ROOT`, `UNI_ROOT` or `UNILAVIRA_ROOT`, and `JANUS_ROOT` only when a checkout lives somewhere else.
+For Uni-LaViRA, the launcher uses the `sim-code/habitat` directory, moved to `baselines/models/Uni-LaViRA` above. Model paths can be configured with:
 
-ETPNav and Uni-LaViRA both ship a package named `vlnce_baselines`. Import only one of them in a process.
+| Policy | Path variable |
+| --- | --- |
+| ETPNav | `ETPNAV_ROOT` |
+| CMA | `CMA_ROOT` |
+| Uni-LaViRA | `UNI_ROOT` or `UNILAVIRA_ROOT` |
+| JanusVLN | `JANUS_ROOT` |
+
+ETPNav and Uni-LaViRA both provide a package named `vlnce_baselines`; import only one of them per process.
+
+Download the required checkpoints separately, including the ETPNav checkpoint and JanusVLN_Extra weights. The Janus launchers also require a `streamvln` environment, provided through `JANUS_ENV`. Set `MODELS_DIR` to the directory containing the shared auxiliary models (SAM3, DINOv3, MiniLM, and BERT).
 
 <a id="dataset"></a>
 
-### 2. Dataset
+### 3. Benchmark dataset
 
-`datasets/` is not part of the git repository. Download the episodes from [KangThomas/Mem-X](https://huggingface.co/datasets/KangThomas/Mem-X/tree/main) into `datasets/`.
+Download the episodes from [KangThomas/Mem-X](https://huggingface.co/datasets/KangThomas/Mem-X/tree/main) into `datasets/` using the Hugging Face CLI:
 
 ```bash
 hf download KangThomas/Mem-X --repo-type dataset --local-dir datasets
 ```
 
-The files land here:
+Each level contains episodes, ground truth, and an evaluation protocol:
 
 ```text
-datasets/level1/level1.json
-datasets/level1/level1_gt.json
-datasets/level1/protocol_level1.json
-datasets/level2/level2.json
-datasets/level2/level2_gt.json
-datasets/level2/protocol_level2.json
-datasets/level3/level3.json
-datasets/level3/level3_gt.json
-datasets/level3/protocol_level3.json
+datasets/
+├── level1/
+│   ├── level1.json
+│   ├── level1_gt.json
+│   └── protocol_level1.json
+├── level2/
+│   ├── level2.json
+│   ├── level2_gt.json
+│   └── protocol_level2.json
+└── level3/
+    ├── level3.json
+    ├── level3_gt.json
+    └── protocol_level3.json
 ```
 
-`levelN.json` holds the episodes. `levelN_gt.json` is keyed by `episode_id` and stores `locations`, `actions`, and `forward_steps`. `protocol_levelN.json` is the evaluation protocol for that level. Habitat role splits live under `datasets/levelN/habitat/` and are rebuilt by `scripts/materialize_habitat_splits.py`. The shared field list is [`datasets/EPISODE_SCHEMA.json`](datasets/EPISODE_SCHEMA.json).
+| File | Contents |
+| --- | --- |
+| `levelN.json` | Episode records |
+| `levelN_gt.json` | Ground truth keyed by `episode_id`, with `locations`, `actions`, and `forward_steps` |
+| `protocol_levelN.json` | Evaluation protocol for the level |
+| `EPISODE_SCHEMA.json` | Shared episode field definitions |
 
-| Level | Roles | Episodes |
-|---|---|---|
+The episode counts below follow the role order in the second column:
+
+| Level | Episode roles | Episodes per role |
+| --- | --- | --- |
 | 1 | ep0–ep4 | 315 / 315 / 221 / 34 / 1 |
-| 2 | ep0–ep2 | 238 each |
-| 3 | ep0–ep2 | 157 each |
+| 2 | ep0–ep2 | 238 / 238 / 238 |
+| 3 | ep0–ep2 | 157 / 157 / 157 |
 
-`episode_id` is the row id, for example `level1_00800_002_ep1` or `level3_000_ep0`. `task_type` is `basic` or `memory`. Basic tasks build memory and are shared by native and +MemBridge. Success is a final Habitat geodesic of at most 3 m. STOP is not required.
+Habitat launchers read per-role splits from `datasets/levelN/habitat/`. Generate or rebuild them with [scripts/materialize_habitat_splits.py](scripts/materialize_habitat_splits.py):
 
-HM3DSem meshes are not part of this repository. Every episode `scene_id` is relative to `SCENES_DIR` and uses the val split, for example `hm3dsem/val/00800-TEEsavR23oF/TEEsavR23oF.basis.glb`.
+```bash
+for level in 1 2 3; do
+  python scripts/materialize_habitat_splits.py --root "$PWD" --level "$level"
+done
+```
 
-Download HM3D v0.2 from the official Matterport repository: [matterport/habitat-matterport-3dresearch](https://github.com/matterport/habitat-matterport-3dresearch). Use the **val** rows: the Habitat archive, the semantic annotations, and the semantic configs. Access is academic and non-commercial. Accept the terms on that page, then download the archives linked there.
+Each episode has a unique `episode_id`, such as `level1_00800_002_ep1` or `level3_000_ep0`. The `info.task_type` field is `basic` or `memory`. Basic tasks build memory and are shared by the native and +MemBridge pipelines. An episode succeeds when its final Habitat geodesic distance to the goal is **at most 3 m**; a STOP action is not required.
 
-Unpack them so the Habitat val tree sits under `hm3dsem/val/`. A local `scenes/` directory at the repository root is a suitable place. It is gitignored.
+### 4. Scene meshes
+
+Mem-X uses the **HM3D v0.2 validation split** with semantic annotations. Download the Habitat archive, semantic annotations, and semantic configs from the **val** rows in the official [Matterport HM3D repository](https://github.com/matterport/habitat-matterport-3dresearch). Access is subject to its academic and non-commercial terms; accept those terms before downloading.
+
+Extract the files so that `SCENES_DIR` contains the `hm3dsem/val/` tree. For example:
 
 ```text
 scenes/hm3dsem/val/00800-TEEsavR23oF/TEEsavR23oF.basis.glb
@@ -110,76 +145,104 @@ scenes/hm3dsem/val/00800-TEEsavR23oF/TEEsavR23oF.basis.glb
 export SCENES_DIR="$PWD/scenes"
 ```
 
-### 3. Environment
+Every episode's `scene_id` is relative to `SCENES_DIR`. The local `scenes/` directory is gitignored.
 
-Runtime packages are pinned in [`environment.yml`](environment.yml). The env name in that file is `memx`. Python is 3.8.20, PyTorch is 2.4.1+cu118, and Transformers is 4.46.3.
+### 5. API
+
+Configure the API base URL, model name, and API key in a local `vlm.env` file:
 
 ```bash
-conda env create -f environment.yml
-conda activate memx
+
+BASE_URL=https://your-endpoint.example/v1
+MODEL_NAME=your-model-name
+API_KEY=your-api-key
 ```
 
-That file does not install Habitat. Install Habitat-Sim and Habitat-Lab at tag `v0.1.7`, following the official instructions:
+Our experiments used the following API base URL and model:
 
-- Website: [aihabitat.org](https://aihabitat.org/)
-- Habitat-Sim: [facebookresearch/habitat-sim](https://github.com/facebookresearch/habitat-sim/tree/v0.1.7)
-- Habitat-Lab: [facebookresearch/habitat-lab](https://github.com/facebookresearch/habitat-lab/tree/v0.1.7)
+```bash
+BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+MODEL_NAME=qwen3.5-27b
+```
 
-The project imports these packages as `habitat_sim` and `habitat`. Magnum is the Python binding produced by the Habitat-Sim build. There is no separate Magnum package to install.
+```bash
+export VLM_ENV_FILE="$PWD/vlm.env"
+```
+
+| Variable | Purpose |
+| --- | --- |
+| `BASE_URL` | API base URL |
+| `MODEL_NAME` | Model identifier |
+| `API_KEY` | API key |
+
+
 
 ## Running
 
-`DRY_RUN` defaults to `0` and runs the evaluation. `DRY_RUN=1` prints the plan.
+After completing setup, configure the paths and GPU workers:
 
 ```bash
 export SCENES_DIR="$PWD/scenes"
 export VLM_ENV_FILE="$PWD/vlm.env"
 export MODELS_DIR=/path/to/models
+export ETPNAV_ROOT="$PWD/baselines/models/ETPNav"
+export GPU_IDS="0"
+```
 
+Choose a level, pipeline, and policy:
+
+```bash
+# Level 1: ETPNav + MemBridge
 PIPELINE=membridge MODEL=etpnav bash scripts/level1/level1.sh
-PIPELINE=native MODEL=janus bash scripts/level2/level2.sh
-bash scripts/level3/level3.sh cma
+
+# Level 2: native JanusVLN (requires JANUS_ENV)
+JANUS_ENV=/path/to/streamvln GPU_PAIRS="0,1" \
+  PIPELINE=native MODEL=janus bash scripts/level2/level2.sh
+
+# Level 3: CMA + MemBridge; the policy can also be a positional argument
+PIPELINE=membridge bash scripts/level3/level3.sh cma
 ```
 
-`PIPELINE` is `membridge` (also `+membridge` or `plus`) or `native` (also `original`). `MODEL` is `etpnav`, `cma`, `unilavira`, or `janus`. The first positional argument sets the model as well.
+| Setting | Values / behavior |
+| --- | --- |
+| `PIPELINE` | `membridge` (default; aliases: `+membridge`, `plus`) or `native` (alias: `original`) |
+| `MODEL` | `etpnav` (default), `cma`, `unilavira`, or `janus`; the first positional argument overrides this variable |
+| `GPU_IDS` | Space-separated GPU IDs for ETPNav, CMA, and Uni-LaViRA, e.g. `"0 1"` |
+| `GPU_PAIRS` | Space-separated GPU pairs for JanusVLN, e.g. `"0,1 2,3"` |
+| `DRY_RUN` | `0` (default) runs evaluation; `1` prints the launch plan without running evaluation |
 
-Janus still needs a streamvln environment, passed with `JANUS_ENV`. JanusVLN_Extra weights and the ETPNav checkpoint stay outside this repository.
-
-### API endpoint and key
-
-The vision-language calls read the endpoint and the key from the environment. Set them yourself. This repository does not contain an API key, a base URL, or a model name.
-
-Create a local env file and pass it as `VLM_ENV_FILE`. Do not commit that file.
+To inspect a launch plan after setup:
 
 ```bash
-# vlm.env  (local only)
-VA_BASE_URL=https://your-endpoint.example/v1
-VA_MODEL_NAME=your-model-name
-VA_API_KEY=your-api-key
+DRY_RUN=1 PIPELINE=membridge MODEL=etpnav bash scripts/level1/level1.sh
 ```
 
-```bash
-export VLM_ENV_FILE="$PWD/vlm.env"
-```
+Results are written under `experiments_results/<policy>/levelN/` by default. The launchers print the run directory at startup; set `RUN_ROOT` to override it.
 
-`VA_BASE_URL` is the API site, `VA_MODEL_NAME` is the model id, and `VA_API_KEY` is the secret. Language-action calls, when used, take `LA_BASE_URL`, `LA_MODEL_NAME`, and `LA_API_KEY` the same way.
-
-## Layout
+## Repository layout
 
 ```text
-baselines/run.py        shared entry
-baselines/adapt/        policy adapters
-baselines/runners/      level runners and stage.py
-baselines/models/       ETPNav, CMA, Uni-LaViRA, JanusVLN
-membridge/              scene graph, navigation, maps, retrieval, VLM, exploration, localization
-scripts/levelN/         levelN.sh, levelN_membridge.sh, levelN_native.sh
-datasets/levelN/        episodes, ground truth, protocol_levelN.json
-environment.yml         conda env memx
+Mem-X/
+├── baselines/
+│   ├── run.py          # Shared Python entry point
+│   ├── adapt/          # Policy adapters
+│   ├── runners/        # Level runners and stage logic
+│   └── models/         # Local baseline checkouts
+├── membridge/          # Scene graphs, maps, retrieval, navigation, VLM, exploration, localization
+├── scripts/
+│   ├── level1/         # Level 1 launchers
+│   ├── level2/         # Level 2 launchers
+│   └── level3/         # Level 3 launchers
+├── datasets/           # Local episodes, ground truth, protocols, and Habitat splits
+├── scenes/             # Local HM3D scene meshes
+├── experiments_results/ # Evaluation outputs
+├── tests/              # Test suite
+└── environment.yml     # Pinned Conda environment
 ```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues through [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [SECURITY.md](SECURITY.md) to report security issues. Run the test suite with:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -189,5 +252,4 @@ python -m unittest discover -s tests -v
 
 Mem-X is released under the [Apache License 2.0](LICENSE).
 
-`baselines/models/` contains upstream checkouts. ETPNav, CMA, Uni-LaViRA, JanusVLN, and CLIP keep the licenses in their own directories. Those terms apply to that code.
-
+Upstream code, including ETPNav, CMA, Uni-LaViRA, JanusVLN, and CLIP, remains subject to the licenses provided in its respective directories.

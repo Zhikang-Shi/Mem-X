@@ -1,60 +1,75 @@
-# Environment
+# Environment setup
 
-The runtime image is `mem-x`. Docker tags are lowercase, so the name is `mem-x`, not `Mem-x`. Scripts use `MEMX_IMAGE`, which defaults to `mem-x:latest`.
+Mem-X provides a Conda environment definition in [environment.yml](environment.yml). Run the commands below from the repository root.
 
-`mem-x:latest` is the slim image, about 27 GB. The previous 35 GB image is kept as `mem-x:full` and `lavira-oss:dev`. The slim image removes the Habitat-sim build tree, Nsight Compute, the conda package cache, and unused GroundingDINO and segment-anything sources. It can be uploaded. A registry must accept an image of this size. Docker Hub, GitHub Container Registry, and a private registry all work after `docker login`.
-
-The image has one conda env, `/opt/conda/envs/lavira`. It does not contain Janus weights or a `streamvln` environment. lavira can load JanusVLN_Extra: `einops`, `qwen-vl-utils`, and `accelerate` are installed there, and `baselines/adapt/janus_policy.py` registers `qwen2_5_vl` for transformers 4.46. A one-step load on that interpreter returned `TURN_LEFT`. There is no `flash-attn` wheel in lavira, so that path uses SDPA. The level scripts still start Janus with `/janus/envs/streamvln/bin/python` and still require `JANUS_ENV`.
-
-## What is inside the image
-
-Two Pythons share this image. They are not one process.
-
-| Python | Used by |
-|---|---|
-| `/opt/conda/envs/lavira/bin/python` | ETPNav, CMA, Uni-LaViRA, scene graph, Habitat, and a Janus load |
-| `/janus/envs/streamvln/bin/python` | JanusVLN in the level scripts. This interpreter is mounted, not stored in the image |
-
-Uni-LaViRA and ETPNav both ship a package named `vlnce_baselines`. Do not import both in one process.
-
-## What stays outside the image
-
-These are mounted at run time. They are not in `mem-x`.
-
-| Variable | Contents |
-|---|---|
-| `ETPNAV_ROOT` | ETPNav code, Habitat configs, and the ETPNav checkpoint |
-| `JANUS_ROOT` | JanusVLN code. Weights stay outside the image. `JANUS_ENV` is the optional streamvln mount |
-| `CMA_ROOT` | CMA code and `CMA_PM_DA_Aug.pth` |
-| `UNI_ROOT` or `UNILAVIRA_ROOT` | Uni-LaViRA habitat directory |
-| `SCENES_DIR` | Parent of `hm3dsem/val/...` |
-| `MODELS_DIR` | SAM3, DINOv3, MiniLM, BERT |
-| `VLM_ENV_FILE` | `VA_BASE_URL`, `VA_MODEL_NAME`, `VA_API_KEY` |
-
-## Pull and run
+## Create the Conda environment
 
 ```bash
-docker pull <registry>/mem-x:latest
-docker tag <registry>/mem-x:latest mem-x:latest
-
-export MEMX_IMAGE=mem-x:latest
-export ETPNAV_ROOT=/path/to/ETPNav
-export SCENES_DIR=/path/to/scenes
-export VLM_ENV_FILE=/path/to/.env
-export CMA_ROOT=/path/to/CMA
-
-bash scripts/level1/level1.sh
+conda env create -f environment.yml
+conda activate memx
 ```
 
-`DRY_RUN` defaults to `0`, so this starts containers. Set `DRY_RUN=1` to print the plan only.
+The main package versions are:
 
-## Upload
+| Package | Version |
+| --- | --- |
+| Python | 3.8.20 |
+| PyTorch | 2.4.1+cu118 |
+| Transformers | 4.46.3 |
 
-From the machine that already has the image:
+GPU evaluation requires an NVIDIA driver compatible with the CUDA 11.8 PyTorch build.
+
+## Install Habitat
+
+Habitat is installed separately from the Conda environment definition. Follow the official installation instructions for:
+
+- [Habitat-Sim v0.1.7](https://github.com/facebookresearch/habitat-sim/tree/v0.1.7)
+- [Habitat-Lab v0.1.7](https://github.com/facebookresearch/habitat-lab/tree/v0.1.7)
+
+Install both into the active `memx` environment. They are imported as `habitat_sim` and `habitat`. The Habitat-Sim build also provides the Magnum Python bindings.
+
+Check the installation with:
 
 ```bash
-docker tag mem-x:latest <registry>/mem-x:latest
-docker push <registry>/mem-x:latest
+python -c "import torch, transformers; print('PyTorch:', torch.__version__); print('Transformers:', transformers.__version__); print('CUDA available:', torch.cuda.is_available())"
+python -c "import habitat_sim, habitat, magnum; print('Habitat imports succeeded')"
 ```
 
-`<registry>` is the registry host and repository, for example `ghcr.io/<user>/mem-x` or `docker.io/<user>/mem-x`. The push is large. Do not commit weights, scenes, or `.env` into the repository.
+## Prepare model code and local assets
+
+Baseline repositories, checkpoints, auxiliary models, and scene meshes must be downloaded separately. See the [README setup instructions](README.md#setup) for model repositories and dataset preparation.
+
+| Variable | Local path |
+| --- | --- |
+| `ETPNAV_ROOT` | ETPNav checkout, including its configs and checkpoint |
+| `CMA_ROOT` | CMA checkout, including `CMA_PM_DA_Aug.pth` |
+| `UNI_ROOT` or `UNILAVIRA_ROOT` | Uni-LaViRA Habitat code directory |
+| `JANUS_ROOT` | JanusVLN checkout |
+| `JANUS_ENV` | `streamvln` environment directory required by the Janus launchers |
+| `SCENES_DIR` | Scene directory containing `hm3dsem/val/` |
+| `MODELS_DIR` | Auxiliary model directory containing SAM3, DINOv3, MiniLM, and BERT |
+| `VLM_ENV_FILE` | Local API configuration file |
+
+The default baseline checkout locations are under `baselines/models/`. Set the corresponding path variables when needed by the selected launcher. JanusVLN_Extra weights must also be prepared separately.
+
+ETPNav and Uni-LaViRA both provide a Python package named `vlnce_baselines`. Use them in separate processes to avoid import conflicts.
+
+## Configure the API
+
+Create a local `vlm.env` file with your API base URL, model name, and API key:
+
+```bash
+BASE_URL=https://your-endpoint.example/v1
+MODEL_NAME=your-model-name
+API_KEY=your-api-key
+```
+
+Set the file path:
+
+```bash
+export VLM_ENV_FILE="$PWD/vlm.env"
+```
+
+The [README API section](README.md#5-api) lists the URL and model used in our experiments. Keep real API keys out of version control; see [SECURITY.md](SECURITY.md).
+
+For evaluation commands and GPU settings, see [Running](README.md#running).
