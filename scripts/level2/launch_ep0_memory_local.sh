@@ -39,24 +39,15 @@ if [[ "${DRY_RUN}" == 1 ]]; then
   echo "[etpnav-l2-ep0] dry run builder from ${ROLLOUT_ROOT}"
   exit 0
 fi
-docker run --rm --gpus '"device=0"' --network host --shm-size 16g \
-  --env CUDA_VISIBLE_DEVICES=0 \
-  --env http_proxy=http://127.0.0.1:7897 --env https_proxy=http://127.0.0.1:7897 \
-  --volume "${LLHN}:/workspace/LifeLongHomeNav:ro" \
-  --volume "${SCENES_DIR}:${SCENES_DIR}:ro" \
-  --volume "${MODELS_DIR}:${MODELS_DIR}:ro" \
-  --volume "${OUTPUT_ROOT}:/workspace/output" \
-  --volume "${LLHN}/datasets:/datasets:ro" ${MEMX_IMAGE:-mem-x:latest} bash -lc "
-    set -euo pipefail
-    PY=/opt/conda/envs/lavira/bin/python
-    \$PY -m pip install -q --disable-pip-version-check sentence-transformers scikit-learn iopath timm ftfy huggingface_hub einops psutil
-    exec \$PY /workspace/LifeLongHomeNav/baselines/run.py --mode build --level 2 --pipeline membridge \
-    --ep0-rollouts "${ROLLOUT_ROOT}" \
-    --dataset "${DATASET}" \
-    --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" \
-    --output-root /workspace/output \
-    --memory-module-root /workspace/LifeLongHomeNav/membridge \
-    --expected-count 238 \
-    --skip-existing --continue-on-error
-  "
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../lib/conda_run.sh"
+memx_run 0 "${LLHN}" \
+  python "${LLHN}/baselines/run.py" --mode build --level 2 --pipeline membridge \
+  --ep0-rollouts "${ROLLOUT_ROOT}" \
+  --dataset "${DATASET}" \
+  --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" \
+  --output-root "${OUTPUT_ROOT}" \
+  --memory-module-root "${LLHN}/membridge" \
+  --expected-count "${EXPECTED_COUNT:-238}" \
+  --skip-existing --continue-on-error
 echo "[etpnav-l2-ep0] M0 ${OUTPUT_ROOT}"

@@ -41,7 +41,10 @@ def main() -> int:
     needs_role = mode == "basic" or (mode == "memory" and args.level in (1, 2))
     if needs_role and "--role" not in rest:
         rest.extend(["--role", args.role])
-    if mode == "basic" and args.nav_model and "--nav-model" not in rest:
+    forward_nav_model = mode in {"basic", "basic-localize"} or (
+        mode == "memory" and args.level in (1, 2, 3)
+    )
+    if forward_nav_model and args.nav_model and "--nav-model" not in rest:
         rest.extend(["--nav-model", args.nav_model])
     if mode == "basic":
         from run_level2_native import main as entry

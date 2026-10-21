@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -123,7 +124,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=(
             LLHN
-            / "memory_module/semantic_scene_graph/config/"
+            / "membridge/semantic_scene_graph/config/"
             "level1_runtime_query_vocabulary_75.json"
         ),
     )

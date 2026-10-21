@@ -398,7 +398,7 @@ def install_memory_environment(args: argparse.Namespace, work_root: Path, m0: Pa
         "INHERIT_SG_OUTPUT_DIR": str(work_root),
         "INHERIT_SG_SESSION_NAME": "working_memory",
         "INHERIT_SG_CONFIG": str(
-            REPO_ROOT / "memory_module/semantic_scene_graph/legacy_builder_source/config_sam3.yaml"
+            REPO_ROOT / "semantic_scene_graph/legacy_builder_source/config_sam3.yaml"
         ),
         "INHERIT_SG_PRELOAD_DIR": str(m0),
         "INHERIT_SG_PRELOAD_QUERY_ONLY": "1",

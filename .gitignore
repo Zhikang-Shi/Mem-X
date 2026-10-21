@@ -18,6 +18,7 @@ experiments_results/
 /datasets/
 /scenes/
 /baselines/models/
+/models/
 
 .venv/
 .idea/

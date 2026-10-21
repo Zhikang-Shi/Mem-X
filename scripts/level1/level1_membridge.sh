@@ -16,6 +16,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LLHN="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 MEMX="${LLHN}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../lib/conda_run.sh"
+JANUS_MODEL="${JANUS_MODEL:-${MODELS_DIR:-${LLHN}/models}/JanusVLN_Extra}"
 
 if [[ $# -ge 1 && "${1}" != -* ]]; then
   MODEL="$1"
@@ -86,27 +89,23 @@ build_m0() {
     return
   fi
   mkdir -p "${output}"
-  docker run --rm --gpus '"device=0"' --network host --shm-size 16g \
-    --env CUDA_VISIBLE_DEVICES=0 \
-    --env http_proxy=http://127.0.0.1:7897 --env https_proxy=http://127.0.0.1:7897 \
-    --volume "${LLHN}:/workspace/LifeLongHomeNav:ro" \
-    --volume "${SCENES_DIR}:${SCENES_DIR}:ro" \
-    --volume "${MODELS_DIR}:${MODELS_DIR}:ro" \
-    --volume "${output}:/workspace/output" \
-    --volume "${LLHN}/datasets:/datasets:ro" ${MEMX_IMAGE:-mem-x:latest} bash -lc "
-      set -euo pipefail
-      PY=/opt/conda/envs/lavira/bin/python
-      \$PY -m pip install -q --disable-pip-version-check sentence-transformers scikit-learn iopath timm ftfy huggingface_hub einops psutil
-      exec \$PY ${M0_BUILDER} \
-        --ep0-rollouts ${rollouts} \
-        --dataset ${L1_DATA}/level1_ep0.json.gz \
-        --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" \
-        --output-root /workspace/output \
-        --memory-module-root /workspace/LifeLongHomeNav/membridge \
-        --coordinate-frame habitat_world \
-        --expected-count 315 \
-        --skip-existing --continue-on-error
-    "
+  memx_spawn 0 "${LLHN}" "${output}/build.log" \
+    python ${M0_BUILDER} \
+    --ep0-rollouts "${rollouts}" \
+    --dataset "${L1_DATA}/level1_ep0.json.gz" \
+    --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" \
+    --output-root "${output}" \
+    --memory-module-root "${LLHN}/membridge" \
+    --coordinate-frame habitat_world \
+    --query-vocabulary "${LLHN}/membridge/semantic_scene_graph/config/level1_runtime_query_vocabulary_75.json" \
+    --sam3-ckpt "${MODELS_DIR:?Set MODELS_DIR}/facebook/sam3/sam3.pt" \
+    --sam3-source-root "${MODELS_DIR}/source/sam3" \
+    --dinov3-model "${MODELS_DIR}/facebook/dinov3" \
+    --dinov3-repo "${MODELS_DIR}/source/dinov3" \
+    --text-encoder "${MODELS_DIR}/all-MiniLM-L6-v2" \
+    --expected-count "${EXPECTED_COUNT:-315}" \
+    --skip-existing --continue-on-error >/dev/null
+  wait "$!" || die "M0 build failed"
   log "M0 ${output}"
 }
 
@@ -121,32 +120,19 @@ run_etpnav_ep0() {
   local -a pids=()
   local shard=0 gpu fail=0
   for gpu in "${WORKERS[@]}"; do
-    docker run --rm --gpus "device=${gpu}" --network host --shm-size 8g \
-      --workdir /etpnav \
-      --env HF_HUB_OFFLINE=1 --env TRANSFORMERS_OFFLINE=1 --env TOKENIZERS_PARALLELISM=false \
-      --env PYTHONPATH=/root/habitat-lab:/etpnav \
-      --volume "${ETP_ROOT}:/etpnav:rw" --volume "${ETP_DATA}:/etpnav/data:rw" \
-      --volume "${MEMX}:${MEMX}:ro" \
-      --volume "${SCENES_DIR}:${SCENES_DIR}:ro" \
-      --volume "${HOST_CACHE:-${HOME}/.cache}:/root/.cache:rw" \
-      --volume "${output}:/workspace/output" \
-      --volume "${LLHN}/datasets:/datasets:ro" ${MEMX_IMAGE:-mem-x:latest} bash -lc "
-        set -euo pipefail
-        PY=/opt/conda/envs/lavira/bin/python
-        flock /etpnav/third_party/CLIP/.pip.lock \
-          \$PY -m pip install -q --disable-pip-version-check -e /etpnav/third_party/CLIP jsonlines msgpack-numpy
-        cd /etpnav
-        exec \$PY run.py \
-          --exp_name l1_ep0_s${shard} --run-type eval \
-          --exp-config run_r2r/iter_level1.yaml \
-          SIMULATOR_GPU_IDS [0] TORCH_GPU_IDS [0] GPU_NUMBERS 1 NUM_ENVIRONMENTS 1 \
-          EVAL.CKPT_PATH_DIR data/logs/checkpoints/release_r2r/ckpt.iter12000.pth \
-          EVAL.SPLIT ep0 EVAL.EPISODE_COUNT ${EPISODE_COUNT:--1} \
-          EVAL.DUMP_MEMORY True EVAL.LOAD_GRAPHMAP False \
-          EVAL.MEMORY_ROOT /workspace/output EVAL.MEMORY_STAGE M0 \
-          EVAL.SHARD_ID ${shard} EVAL.NUM_SHARDS ${#WORKERS[@]} \
-          IL.back_algo control IL.is_requeue False
-      " >"${output}/logs/shard$(printf '%02d' "${shard}").log" 2>&1 &
+    PYTHONPATH="${ETP_ROOT}/third_party/CLIP:${ETP_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+    memx_spawn "${gpu}" "${ETP_ROOT}" "${output}/logs/shard$(printf '%02d' "${shard}").log" \
+      python run.py \
+        --exp_name "l1_ep0_s${shard}" --run-type eval \
+        --exp-config run_r2r/iter_level1.yaml \
+        SIMULATOR_GPU_IDS [0] TORCH_GPU_IDS [0] GPU_NUMBERS 1 NUM_ENVIRONMENTS 1 \
+        EVAL.CKPT_PATH_DIR data/logs/checkpoints/release_r2r/ckpt.iter12000.pth \
+        EVAL.SPLIT ep0 EVAL.EPISODE_COUNT "${EPISODE_COUNT:--1}" \
+        EVAL.DUMP_MEMORY True EVAL.LOAD_GRAPHMAP False \
+        EVAL.MEMORY_ROOT "${output}" EVAL.MEMORY_STAGE M0 \
+        EVAL.SHARD_ID "${shard}" EVAL.NUM_SHARDS "${#WORKERS[@]}" \
+        IL.back_algo control IL.is_requeue False
     pids+=("$!")
     shard=$((shard + 1))
   done
@@ -171,46 +157,33 @@ run_discrete_ep0() {
   local -a pids=()
   local shard=0 worker fail=0
   for worker in "${WORKERS[@]}"; do
-    local flags="--nav-model ${MODEL_KEY} --role ep0 --world-poses --dataset /datasets/level1/habitat/level1_ep0.json.gz"
-    flags+=" --output-root /workspace/output --max-steps ${MAX_STEPS} --num-shards ${#WORKERS[@]} --shard-index ${shard}"
+    local flags="--nav-model ${MODEL_KEY} --role ep0 --world-poses --dataset ${L1_DATA}/level1_ep0.json.gz"
+    flags+=" --output-root ${output} --max-steps ${MAX_STEPS} --num-shards ${#WORKERS[@]} --shard-index ${shard}"
     [[ -n "${SESSION_ID:-}" ]] && flags+=" --session-id ${SESSION_ID}"
+    local logf="${output}/logs/shard$(printf '%02d' "${shard}").log"
     if [[ "${MODEL_KEY}" == "janus" ]]; then
-      env -u NVIDIA_VISIBLE_DEVICES docker run --rm --gpus "\"device=${worker}\"" \
-        --network host --shm-size 16g \
-        --env CUDA_VISIBLE_DEVICES=0,1 \
-        --env JANUSVLN_VGGT_DEVICE=cuda:0 --env JANUSVLN_LANGUAGE_DEVICE=cuda:1 \
-        --env HF_HUB_OFFLINE=1 --env HOME=/root --workdir /janus/src/JanusVLN \
-        --env PYTHONPATH="${MEMX}/baselines/models/JanusVLN/src:${MEMX}:${MEMX}/membridge/localization:${MEMX}/baselines/adapt:${MEMX}/baselines/adapt" \
-        --volume "${ETP_ROOT}:/etpnav:rw" --volume "${ETP_DATA}:/etpnav/data:ro" \
-        --volume "${JANUS_ENV:?Set JANUS_ENV to the streamvln environment}:/janus/envs/streamvln:ro" --volume "${MEMX}:${MEMX}:ro" \
-        --volume "${SCENES_DIR}:${SCENES_DIR}:ro" --volume "${output}:/workspace/output" \
-        --volume "${LLHN}/datasets:/datasets:ro" ${MEMX_IMAGE:-mem-x:latest} /janus/envs/streamvln/bin/python ${EP0_RUNNER} \
-          --janus-root ${MEMX}/baselines/models/JanusVLN --janus-model /janus/models/JanusVLN_Extra \
-          --janus-config /janus/src/JanusVLN/config/vln_level1_protocol.yaml \
-          --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags} \
-        >"${output}/logs/shard$(printf '%02d' "${shard}").log" 2>&1 &
+      JANUSVLN_VGGT_DEVICE=cuda:0 JANUSVLN_LANGUAGE_DEVICE=cuda:1 HF_HUB_OFFLINE=1 \
+      PYTHONPATH="${JANUS_ROOT}/src:${MEMX}:${MEMX}/membridge/localization:${MEMX}/baselines/adapt${PYTHONPATH:+:${PYTHONPATH}}" \
+      memx_spawn "${worker}" "${JANUS_ROOT}" "${logf}" \
+        python ${EP0_RUNNER} \
+          --janus-root "${JANUS_ROOT}" --janus-model "${JANUS_MODEL}" \
+          --janus-config "${JANUS_ROOT}/config/vln_level1_protocol.yaml" \
+          --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags}
     else
-      local extra_vol="" extra_py="" exp="/etpnav/run_r2r/iter_level1.yaml"
+      local extra_py="" exp="${ETP_ROOT}/run_r2r/iter_level1.yaml"
       if [[ "${MODEL_KEY}" == "cma" ]]; then
-        extra_vol="--volume ${CMA_ROOT}:/cma:ro"
-        extra_py=":/cma"
-        exp="/cma/experiment_level3/cma_level3.yaml"
-        flags+=" --cma-root ${MEMX}/baselines/models/CMA --ckpt ${MEMX}/baselines/models/CMA/data/checkpoints/CMA_PM_DA_Aug.pth --exp-config ${exp}"
+        extra_py=":${CMA_ROOT}"
+        exp="${CMA_ROOT}/experiment_level3/cma_level3.yaml"
+        flags+=" --cma-root ${CMA_ROOT} --ckpt ${CMA_ROOT}/data/checkpoints/CMA_PM_DA_Aug.pth --exp-config ${exp}"
       else
-        extra_vol="--volume ${UNI_ROOT}:/unilavira:ro"
-        extra_py=":/unilavira"
-        flags+=" --unilavira-root ${MEMX}/baselines/models/Uni-LaViRA --exp-config ${exp}"
+        extra_py=":${UNI_ROOT}"
+        flags+=" --unilavira-root ${UNI_ROOT} --exp-config ${exp}"
       fi
-      env -u NVIDIA_VISIBLE_DEVICES docker run --rm --gpus "\"device=${worker}\"" \
-        --network host --shm-size 16g --env CUDA_VISIBLE_DEVICES=0 --env HOME=/root \
-        --env PYTHONPATH="/root/habitat-lab:/etpnav${extra_py}:${MEMX}/baselines/adapt:${MEMX}/baselines/adapt:${MEMX}:${MEMX}/membridge/localization" \
-        --volume "${ETP_ROOT}:/etpnav:rw" --volume "${ETP_DATA}:/etpnav/data:ro" \
-        ${extra_vol} --volume "${MEMX}:${MEMX}:ro" \
-        --volume "${SCENES_DIR}:${SCENES_DIR}:ro" --volume "${output}:/workspace/output" \
-        --volume "${LLHN}/datasets:/datasets:ro" ${MEMX_IMAGE:-mem-x:latest} /opt/conda/envs/lavira/bin/python ${EP0_RUNNER} \
-          --task-config /etpnav/run_r2r/hm3d_level1.yaml \
-          --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags} \
-        >"${output}/logs/shard$(printf '%02d' "${shard}").log" 2>&1 &
+      PYTHONPATH="${ETP_ROOT}/third_party/CLIP:${ETP_ROOT}${extra_py}:${MEMX}/baselines/adapt:${MEMX}:${MEMX}/membridge/localization${PYTHONPATH:+:${PYTHONPATH}}" \
+      memx_spawn "${worker}" "${LLHN}" "${logf}" \
+        python ${EP0_RUNNER} \
+          --task-config "${ETP_ROOT}/run_r2r/hm3d_level1.yaml" \
+          --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags}
     fi
     pids+=("$!")
     shard=$((shard + 1))
@@ -224,7 +197,7 @@ run_query_role() {
   local role="$1"
   local m0="$2"
   local output="${RUN_ROOT}/query/${role}"
-  local dataset="/datasets/level1/habitat/level1_${role}.json.gz"
+  local dataset="${L1_DATA}/level1_${role}.json.gz"
   log "query ${role}: read frozen M0 ${m0}"
   if [[ "${DRY_RUN}" == 1 ]]; then
     log "dry run skips query ${role}"
@@ -242,64 +215,42 @@ run_query_role() {
   for worker in "${WORKERS[@]}"; do
     local flags="--nav-model ${MODEL_KEY} --role ${role} --dataset ${dataset} --m0-root ${m0}"
     flags+=" --route-source ${ROUTE_SOURCE}"
-    flags+=" --output-root /workspace/output --max-steps ${MAX_STEPS} --num-shards ${#WORKERS[@]} --shard-index ${shard}"
+    flags+=" --output-root ${output} --max-steps ${MAX_STEPS} --num-shards ${#WORKERS[@]} --shard-index ${shard}"
     [[ -n "${SESSION_ID:-}" ]] && flags+=" --session-id ${SESSION_ID}"
+    local logf="${output}/logs/shard$(printf '%02d' "${shard}").log"
     if [[ "${MODEL_KEY}" == "janus" ]]; then
-      env -u NVIDIA_VISIBLE_DEVICES docker run --rm --gpus "\"device=${worker}\"" \
-        --network host --shm-size 16g --env-file "${VLM_ENV_FILE}" \
-        --env CUDA_VISIBLE_DEVICES=0,1 \
-        --env JANUSVLN_VGGT_DEVICE=cuda:0 --env JANUSVLN_LANGUAGE_DEVICE=cuda:1 \
-        --env HF_HUB_OFFLINE=1 --env HOME=/root --workdir /janus/src/JanusVLN \
-        --env http_proxy=http://127.0.0.1:7897 --env https_proxy=http://127.0.0.1:7897 \
-        --env PYTHONPATH="${MEMX}/baselines/models/JanusVLN/src:${MEMX}:${MEMX}/membridge/runners:${MEMX}/membridge/localization:${MEMX}/baselines/adapt:${MEMX}/baselines/adapt" \
-        --volume "${ETP_ROOT}:/etpnav:rw" --volume "${ETP_DATA}:/etpnav/data:ro" \
-        --volume "${JANUS_ENV:?Set JANUS_ENV to the streamvln environment}:/janus/envs/streamvln:ro" --volume "${MEMX}:${MEMX}:ro" \
-        --volume "${MODELS_DIR}:${MODELS_DIR}:ro" \
-        --volume "${SCENES_DIR}:${SCENES_DIR}:ro" --volume "${m0}:${m0}:ro" \
-        --volume "${output}:/workspace/output" \
-        --volume "${LLHN}/datasets:/datasets:ro" ${MEMX_IMAGE:-mem-x:latest} bash -lc "
-          set -euo pipefail
-          PY=/janus/envs/streamvln/bin/python
-          \$PY -m pip install -q --disable-pip-version-check sentence-transformers scikit-learn scikit-image pycocotools openai iopath timm ftfy huggingface_hub einops psutil
-          exec \$PY ${RUNNER} --janus-root ${MEMX}/baselines/models/JanusVLN --janus-model /janus/models/JanusVLN_Extra \
-            --janus-config /janus/src/JanusVLN/config/vln_level1_protocol.yaml \
-            --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags}
-        " >"${output}/logs/shard$(printf '%02d' "${shard}").log" 2>&1 &
+      MEMX_ENV_FILE="${VLM_ENV_FILE}" \
+      JANUSVLN_VGGT_DEVICE=cuda:0 JANUSVLN_LANGUAGE_DEVICE=cuda:1 HF_HUB_OFFLINE=1 \
+      PYTHONPATH="${JANUS_ROOT}/src:${MEMX}:${MEMX}/membridge/runners:${MEMX}/membridge/localization:${MEMX}/baselines/adapt${PYTHONPATH:+:${PYTHONPATH}}" \
+      memx_spawn "${worker}" "${JANUS_ROOT}" "${logf}" \
+        python ${RUNNER} --janus-root "${JANUS_ROOT}" --janus-model "${JANUS_MODEL}" \
+          --janus-config "${JANUS_ROOT}/config/vln_level1_protocol.yaml" \
+          --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags}
     else
-      local extra_vol="" extra_py="" exp="/etpnav/run_r2r/iter_level1.yaml" ckpt="/etpnav/data/logs/checkpoints/release_r2r/ckpt.iter12000.pth"
+      local extra_py="" exp="${ETP_ROOT}/run_r2r/iter_level1.yaml" ckpt="${ETP_DATA}/logs/checkpoints/release_r2r/ckpt.iter12000.pth"
       if [[ "${MODEL_KEY}" == "cma" ]]; then
-        extra_vol="--volume ${CMA_ROOT}:/cma:ro"
-        extra_py=":/cma"
-        exp="/cma/experiment_level3/cma_level3.yaml"
-        ckpt="/cma/data/checkpoints/CMA_PM_DA_Aug.pth"
-        flags+=" --cma-root ${MEMX}/baselines/models/CMA --r2r-train ${MEMX}/baselines/models/CMA/data/datasets/HM3D_VLNCE_v5/level3/level3_ep2.json.gz"
+        extra_py=":${CMA_ROOT}"
+        exp="${CMA_ROOT}/experiment_level3/cma_level3.yaml"
+        ckpt="${CMA_ROOT}/data/checkpoints/CMA_PM_DA_Aug.pth"
+        flags+=" --cma-root ${CMA_ROOT} --r2r-train ${CMA_ROOT}/data/datasets/HM3D_VLNCE_v5/level3/level3_ep2.json.gz"
       elif [[ "${MODEL_KEY}" == "unilavira" ]]; then
-        extra_vol="--volume ${UNI_ROOT}:/unilavira:ro"
-        extra_py=":/unilavira"
-        flags+=" --unilavira-root ${MEMX}/baselines/models/Uni-LaViRA"
+        extra_py=":${UNI_ROOT}"
+        flags+=" --unilavira-root ${UNI_ROOT}"
       fi
-      env -u NVIDIA_VISIBLE_DEVICES docker run --rm --gpus "\"device=${worker}\"" \
-        --network host --shm-size 16g --env-file "${VLM_ENV_FILE}" \
-        --env CUDA_VISIBLE_DEVICES=0 --env HOME=/root \
-        --env http_proxy=http://127.0.0.1:7897 --env https_proxy=http://127.0.0.1:7897 \
-        --env PYTHONPATH="/root/habitat-lab:/etpnav${extra_py}:${MEMX}/baselines/adapt:${MEMX}:${MEMX}/membridge/runners:${MEMX}/membridge/localization:${MEMX}/baselines/adapt" \
-        --volume "${ETP_ROOT}:/etpnav:rw" --volume "${ETP_DATA}:/etpnav/data:ro" \
-        ${extra_vol} --volume "${MEMX}:${MEMX}:ro" \
-        --volume "${MODELS_DIR}:${MODELS_DIR}:ro" \
-        --volume ${CLIP_CACHE:-${HOME}/.cache/clip}:/root/.cache/clip:ro \
-        --volume ${TORCH_HUB:-${HOME}/.cache/torch/hub/checkpoints}:/root/.cache/torch/hub/checkpoints:ro \
-        --volume "${SCENES_DIR}:${SCENES_DIR}:ro" --volume "${m0}:${m0}:ro" \
-        --volume "${output}:/workspace/output" \
-        --volume "${LLHN}/datasets:/datasets:ro" ${MEMX_IMAGE:-mem-x:latest} bash -lc "
-          set -euo pipefail
-          PY=/opt/conda/envs/lavira/bin/python
-          flock /etpnav/third_party/CLIP/.pip.lock \
-            \$PY -m pip install -q --disable-pip-version-check -e /etpnav/third_party/CLIP jsonlines msgpack-numpy \
-            sentence-transformers scikit-learn iopath timm ftfy huggingface_hub einops psutil
-          exec \$PY ${RUNNER} --exp-config ${exp} --ckpt ${ckpt} \
-            --task-config /etpnav/run_r2r/hm3d_level1.yaml \
-            --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags}
-        " >"${output}/logs/shard$(printf '%02d' "${shard}").log" 2>&1 &
+      MEMX_ENV_FILE="${VLM_ENV_FILE}" \
+      INHERIT_SG_SAM3_CKPT="${MODELS_DIR:?Set MODELS_DIR}/facebook/sam3/sam3.pt" \
+      INHERIT_SG_SAM3_SOURCE_ROOT="${MODELS_DIR}/source/sam3" \
+      SAM3_SOURCE_ROOT="${MODELS_DIR}/source/sam3" \
+      INHERIT_SG_DINOV3_MODEL="${MODELS_DIR}/facebook/dinov3" \
+      INHERIT_SG_DINOV3_REPO="${MODELS_DIR}/source/dinov3" \
+      INHERIT_SG_TEXT_ENCODER="${MODELS_DIR}/all-MiniLM-L6-v2" \
+      PYTHONPATH="${ETP_ROOT}/third_party/CLIP:${ETP_ROOT}${extra_py}:${MEMX}/baselines/adapt:${MEMX}:${MEMX}/membridge/runners:${MEMX}/membridge/localization${PYTHONPATH:+:${PYTHONPATH}}" \
+      memx_spawn "${worker}" "${LLHN}" "${logf}" \
+        python ${RUNNER} --exp-config "${exp}" --ckpt "${ckpt}" \
+          --etpnav-root "${ETP_ROOT}" \
+          --waypoint-ckpt "${ETP_DATA}/wp_pred/check_cwp_bestdist_hfov90" \
+          --task-config "${ETP_ROOT}/run_r2r/hm3d_level1.yaml" \
+          --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags}
     fi
     pids+=("$!")
     shard=$((shard + 1))

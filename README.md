@@ -76,7 +76,22 @@ For Uni-LaViRA, the launcher uses the `sim-code/habitat` directory, moved to `ba
 
 ETPNav and Uni-LaViRA both provide a package named `vlnce_baselines`; import only one of them per process.
 
-Download the required checkpoints separately, including the ETPNav checkpoint and JanusVLN_Extra weights. The Janus launchers also require a `streamvln` environment, provided through `JANUS_ENV`. Set `MODELS_DIR` to the directory containing the shared auxiliary models (SAM3, DINOv3, MiniLM, and BERT).
+Download the required checkpoints separately, including the ETPNav checkpoint and JanusVLN_Extra weights. The Janus launchers also require a `streamvln` environment, provided through `JANUS_ENV`.
+
+SAM3 and DINOv3 are shared auxiliary models. Put the weights and the source checkouts under one directory and point `MODELS_DIR` at it:
+
+```text
+models/facebook/sam3/sam3.pt
+models/facebook/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+models/source/sam3
+models/source/dinov3
+```
+
+```bash
+export MODELS_DIR="$PWD/models"
+```
+
+`models/source/sam3` is the [SAM3](https://github.com/facebookresearch/sam3) code. `models/source/dinov3` is the [DINOv3](https://github.com/facebookresearch/dinov3) code and must contain `hubconf.py`. The same directory also holds MiniLM at `models/all-MiniLM-L6-v2` and BERT at `models/bert-base-uncased`.
 
 <a id="dataset"></a>
 
@@ -184,7 +199,7 @@ After completing setup, configure the paths and GPU workers:
 ```bash
 export SCENES_DIR="$PWD/scenes"
 export VLM_ENV_FILE="$PWD/vlm.env"
-export MODELS_DIR=/path/to/models
+export MODELS_DIR="$PWD/models"
 export ETPNAV_ROOT="$PWD/baselines/models/ETPNav"
 export GPU_IDS="0"
 ```

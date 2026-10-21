@@ -26,14 +26,14 @@ class InstructionRuntimeConfig:
 
     @classmethod
     def from_env(cls) -> "InstructionRuntimeConfig":
-        base_url = os.environ.get("SG_VLM_BASE_URL") or os.environ.get("VA_BASE_URL") or ""
-        model = os.environ.get("SG_VLM_MODEL") or os.environ.get("VA_MODEL_NAME") or ""
+        base_url = os.environ.get("BASE_URL") or os.environ.get("SG_VLM_BASE_URL") or ""
+        model = os.environ.get("MODEL_NAME") or os.environ.get("SG_VLM_MODEL") or ""
         if not base_url or not model:
-            raise ValueError("set SG_VLM_BASE_URL and SG_VLM_MODEL")
+            raise ValueError("set BASE_URL and MODEL_NAME")
         return cls(
             base_url=base_url,
             model=model,
-            api_key=os.environ.get("SG_VLM_API_KEY", os.environ.get("VA_API_KEY", "")),
+            api_key=os.environ.get("API_KEY") or os.environ.get("SG_VLM_API_KEY", ""),
             timeout_s=float(os.environ.get("SG_VLM_TIMEOUT_S", "90")),
             max_retries=int(os.environ.get("SG_VLM_MAX_RETRIES", "2")),
             max_tokens=int(os.environ.get("LIFELONG_SG_VLM_ROUTER_MAX_TOKENS", "1024")),

@@ -414,8 +414,11 @@ class ETPNavSuffixPolicy:
     def __init__(self, args: argparse.Namespace) -> None:
         os.chdir(args.etpnav_root)
         habitat_lab = Path("/root/habitat-lab")
-        if habitat_lab.is_dir():
-            sys.path.insert(0, str(habitat_lab))
+        try:
+            if habitat_lab.is_dir():
+                sys.path.insert(0, str(habitat_lab))
+        except OSError:
+            pass
         sys.path.insert(1, str(args.etpnav_root))
         import types
         import gym.spaces as spaces
@@ -811,8 +814,11 @@ def replay_graphmap_from_poses(env: Any, policy: ETPNavSuffixPolicy, poses: Sequ
 def make_env(args: argparse.Namespace, split: str | None = None):
     os.chdir(args.etpnav_root)
     habitat_lab = Path("/root/habitat-lab")
-    if habitat_lab.is_dir():
-        sys.path.insert(0, str(habitat_lab))
+    try:
+        if habitat_lab.is_dir():
+            sys.path.insert(0, str(habitat_lab))
+    except OSError:
+        pass
     sys.path.insert(1, str(args.etpnav_root))
     import habitat_extensions  # noqa: F401
     from habitat.core.env import Env

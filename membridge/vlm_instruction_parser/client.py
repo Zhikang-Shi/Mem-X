@@ -125,13 +125,13 @@ class OpenAICompatibleVLMClient:
 
     @classmethod
     def from_env(cls) -> "OpenAICompatibleVLMClient":
-        base_url = os.environ.get("SG_VLM_BASE_URL") or os.environ.get("VA_BASE_URL")
-        model = os.environ.get("SG_VLM_MODEL") or os.environ.get("VA_MODEL_NAME")
+        base_url = os.environ.get("BASE_URL") or os.environ.get("SG_VLM_BASE_URL")
+        model = os.environ.get("MODEL_NAME") or os.environ.get("SG_VLM_MODEL")
         if not base_url or not model:
-            raise ValueError("set SG_VLM_BASE_URL and SG_VLM_MODEL")
+            raise ValueError("set BASE_URL and MODEL_NAME")
         return cls(
             base_url=base_url,
-            api_key=os.environ.get("SG_VLM_API_KEY", os.environ.get("VA_API_KEY", "")),
+            api_key=os.environ.get("API_KEY") or os.environ.get("SG_VLM_API_KEY", ""),
             model=model, timeout_s=float(os.environ.get("SG_VLM_TIMEOUT_S", "90")),
             max_retries=int(os.environ.get("SG_VLM_MAX_RETRIES", "2")),
             json_mode=os.environ.get("SG_VLM_JSON_MODE", "0").lower() in {"1", "true", "yes", "on"},

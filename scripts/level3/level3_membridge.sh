@@ -16,6 +16,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/../lib/conda_run.sh"
 LLHN="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 if [[ $# -ge 1 && "${1}" != -* ]]; then
@@ -58,7 +60,12 @@ case "${MODEL}" in
 esac
 
 RUNNER="${LLHN}/baselines/run.py"
+ETP_ROOT="${ETPNAV_ROOT:-${LLHN}/baselines/models/ETPNav}"
+ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
+L3_HABITAT="${LLHN}/datasets/level3/habitat"
 
+GPU_IDS="${GPU_IDS:-0 1 2 3 4 5 6 7}"
+GPU_PAIRS="${GPU_PAIRS:-0,1 2,3 4,5 6,7}"
 STAGE="${STAGE:-all}"
 DRY_RUN="${DRY_RUN:-0}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
@@ -79,10 +86,57 @@ latest_output() {
   readlink -f -- "${link}"
 }
 
+run_etpnav_ep0() {
+  local output="${RUN_ROOT}/ep0"
+  local m0="${RUN_ROOT}/ep0_m0"
+  log "EP0: ETPNav navigation, then local M0, output=${output}"
+  if [[ "${DRY_RUN}" == 1 ]]; then
+    log "dry run skips ETPNav EP0"
+    return
+  fi
+  mkdir -p "${output}/logs" "${m0}"
+  local -a pids=()
+  local shard=0 gpu fail=0
+  read -r -a WORKERS <<< "${GPU_IDS}"
+  for gpu in "${WORKERS[@]}"; do
+    local logf="${output}/logs/shard$(printf '%02d' "${shard}").log"
+    PYTHONPATH="${ETP_ROOT}/third_party/CLIP:${ETP_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 MAGNUM_LOG=quiet GLOG_minloglevel=2 \
+    memx_spawn "${gpu}" "${ETP_ROOT}" "${logf}" \
+      python run.py \
+        --exp_name "l3_ep0_s${shard}" --run-type eval \
+        --exp-config run_r2r/iter_level3.yaml \
+        SIMULATOR_GPU_IDS [0] TORCH_GPU_IDS [0] GPU_NUMBERS 1 NUM_ENVIRONMENTS 1 \
+        EVAL.CKPT_PATH_DIR data/logs/checkpoints/release_r2r/ckpt.iter12000.pth \
+        EVAL.SPLIT ep0 EVAL.EPISODE_COUNT "${EPISODE_COUNT:--1}" \
+        EVAL.DUMP_MEMORY True EVAL.LOAD_GRAPHMAP False \
+        EVAL.MEMORY_ROOT "${output}" EVAL.MEMORY_STAGE M0 \
+        EVAL.SHARD_ID "${shard}" EVAL.NUM_SHARDS "${#WORKERS[@]}" \
+        IL.back_algo control IL.is_requeue False
+    pids+=("$!")
+    shard=$((shard + 1))
+  done
+  for pid in "${pids[@]}"; do wait "${pid}" || fail=1; done
+  [[ "${fail}" -eq 0 ]] || die "ETPNav EP0 failed"
+  memx_spawn 0 "${LLHN}" "${m0}/build.log" \
+    python "${RUNNER}" --mode build --level 3 --pipeline membridge \
+      --ep0-rollouts "${output}" \
+      --dataset "${L3_HABITAT}/level3_ep0.json.gz" \
+      --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" \
+      --output-root "${m0}" \
+      --memory-module-root "${LLHN}/membridge" \
+      --query-vocabulary "${LLHN}/membridge/semantic_scene_graph/config/level1_runtime_query_vocabulary_75.json" \
+      --coordinate-frame ep0_local \
+      --expected-count "${EXPECTED_COUNT:-157}" \
+      --skip-existing --continue-on-error >/dev/null
+  wait "$!" || die "M0 build failed"
+  log "M0 ${m0}"
+}
+
 run_role() {
   local role="$1"
   local output="${RUN_ROOT}/${role}"
-  local dataset="/datasets/level3/habitat/level3_${role}.json.gz"
+  local dataset="${L3_HABITAT}/level3_${role}.json.gz"
   mkdir -p "${output}/logs"
   log "${MODEL_LABEL} ${role}: one runner, level differences come from baselines/runners/stage.py"
   if [[ "${DRY_RUN}" == 1 ]]; then
@@ -97,28 +151,51 @@ run_role() {
   local -a pids=()
   local shard=0 worker fail=0
   if [[ "${MODEL_KEY}" == "janus" ]]; then
-    read -r -a WORKERS <<< "${GPU_PAIRS:-0,1}"
+    read -r -a WORKERS <<< "${GPU_PAIRS}"
   else
-    read -r -a WORKERS <<< "${GPU_IDS:-0}"
+    read -r -a WORKERS <<< "${GPU_IDS}"
   fi
   for worker in "${WORKERS[@]}"; do
-    local py="/opt/conda/envs/lavira/bin/python"
-    local extra=""
+    local py_path="${ETPNAV_ROOT:-${LLHN}/baselines/models/ETPNav}:${LLHN}:${LLHN}/baselines/adapt:${LLHN}/membridge/localization:${LLHN}/membridge/runners"
     if [[ "${MODEL_KEY}" == "janus" ]]; then
-      py="/janus/envs/streamvln/bin/python"
-      extra="--volume ${JANUS_ENV:?Set JANUS_ENV to the streamvln environment}:/janus/envs/streamvln:ro"
+      py_path="${JANUS_ROOT}/src:${py_path}"
     fi
-    docker run --rm --gpus "\"device=${worker}\"" --network host --shm-size 16g \
-      --volume "${LLHN}:${LLHN}:ro" \
-      --volume "${ETPNAV_ROOT:?Set ETPNAV_ROOT}:${ETPNAV_ROOT}:ro" \
-      ${extra} \
-      --volume "${LLHN}/datasets:/datasets:ro" \
-      --volume "${output}:/workspace/output" \
-      ${MEMX_IMAGE:-mem-x:latest} "${py}" "${RUNNER}" \
+    if [[ "${MODEL_KEY}" == "janus" ]]; then
+      export JANUSVLN_VGGT_DEVICE=cuda:0 JANUSVLN_LANGUAGE_DEVICE=cuda:1
+      export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+    fi
+    local -a extra=()
+    [[ -n "${SESSION_ID:-}" ]] && extra+=(--session-id "${SESSION_ID}")
+    if [[ "${role}" != "ep0" && -n "${LIMIT:-}" ]]; then
+      extra+=(--limit "${LIMIT}")
+    fi
+    [[ -n "${M0_ROOT:-}" ]] && extra+=(--m0-root "${M0_ROOT}")
+    if [[ "${role}" == "ep2" && -n "${M1_ROOT:-}" ]]; then
+      extra+=(--m1-root "${M1_ROOT}")
+    fi
+    if [[ "${role}" == "ep2" ]]; then
+      extra+=(--update-memory "${EP2_UPDATE_MEMORY}")
+    fi
+    MEMX_ENV_FILE="${VLM_ENV_FILE:-}" \
+    INHERIT_SG_SAM3_CKPT="${MODELS_DIR:-}/facebook/sam3/sam3.pt" \
+    INHERIT_SG_SAM3_SOURCE_ROOT="${MODELS_DIR:-}/source/sam3" \
+    SAM3_SOURCE_ROOT="${MODELS_DIR:-}/source/sam3" \
+    INHERIT_SG_DINOV3_MODEL="${MODELS_DIR:-}/facebook/dinov3" \
+    INHERIT_SG_DINOV3_REPO="${MODELS_DIR:-}/source/dinov3" \
+    INHERIT_SG_TEXT_ENCODER="${MODELS_DIR:-}/all-MiniLM-L6-v2" \
+    PYTHONPATH="${py_path}${PYTHONPATH:+:${PYTHONPATH}}" \
+    memx_spawn "${worker}" "${LLHN}" "${output}/logs/shard$(printf '%02d' "${shard}").log" \
+      python "${RUNNER}" \
         --mode auto --level 3 --pipeline membridge --role "${role}" --nav-model "${MODEL_KEY}" \
-        --dataset "${dataset}" --output-root /workspace/output \
-        --num-shards ${#WORKERS[@]} --shard-index ${shard} \
-      >"${output}/logs/shard$(printf '%02d' "${shard}").log" 2>&1 &
+        --dataset "${dataset}" --output-root "${output}" \
+        --etpnav-root "${ETP_ROOT}" \
+        --exp-config "${ETP_ROOT}/run_r2r/iter_level3.yaml" \
+        --task-config "${ETP_ROOT}/run_r2r/hm3d_level3.yaml" \
+        --ckpt "${ETP_DATA}/logs/checkpoints/release_r2r/ckpt.iter12000.pth" \
+        --waypoint-ckpt "${ETP_DATA}/wp_pred/check_cwp_bestdist_hfov90" \
+        --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" \
+        --num-shards "${#WORKERS[@]}" --shard-index "${shard}" \
+        "${extra[@]}"
     pids+=("$!")
     shard=$((shard + 1))
   done
@@ -126,7 +203,13 @@ run_role() {
   [[ "${fail}" -eq 0 ]] || die "${MODEL_LABEL} ${role} failed"
 }
 
-run_ep0() { run_role ep0; }
+run_ep0() {
+  if [[ "${MODEL_KEY}" == "etpnav" ]]; then
+    run_etpnav_ep0
+  else
+    run_role ep0
+  fi
+}
 run_ep1() { run_role ep1; }
 run_ep2() { run_role ep2; }
 
