@@ -1,0 +1,37 @@
+--- a/vlnce_baselines/ss_trainer_ETP.py
++++ b/vlnce_baselines/ss_trainer_ETP.py
+@@ -1,3 +1,4 @@
++from memx_etpnav_protocol import session_id_of
+ import gc
+ import os
+ import sys
+@@ -777,16 +778,7 @@
+         return pos, ori
+ 
+     def _session_id_from_episode(self, episode):
+-        info = getattr(episode, "info", None) or {}
+-        session_id = (
+-            info.get("level1_session_id")
+-            or info.get("level3_session_id")
+-            or info.get("level3_task_id")
+-            or info.get("level2_session_id")
+-        )
+-        if session_id:
+-            return str(session_id)
+-        return f"episode_{episode.episode_id}"
++        return session_id_of(episode.episode_id, getattr(episode, "info", None))
+ 
+     def _memory_stage_dir(self, session_id):
+         root = str(getattr(self.config.EVAL, "MEMORY_ROOT", "") or "")
+@@ -826,9 +818,9 @@
+         os.replace(tmp_graph, graph_fn)
+         poses = self.envs.call_at(env_index, "get_pose_trace", {})
+         info = getattr(episode, "info", None) or {}
+-        if info.get("level1_session_id"):
++        if info.get("level1_session_id") or str(episode.episode_id).startswith("level1_"):
+             level = "level1"
+-        elif info.get("level3_session_id") or info.get("level3_task_id"):
++        elif info.get("level3_session_id") or info.get("level3_task_id") or str(episode.episode_id).startswith("level3_"):
+             level = "level3"
+         else:
+             level = "level2"

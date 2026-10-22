@@ -27,6 +27,10 @@ def main() -> int:
     parser.add_argument("--role", default="ep0")
     parser.add_argument("--nav-model", default="")
     args, rest = parser.parse_known_args()
+    if args.nav_model.lower() == "etpnav" and args.mode != "build":
+        from etpnav_runtime import adapt_arguments
+
+        rest = adapt_arguments(rest, args.level)
     chosen = stage(args.level, args.role, args.pipeline)
     mode = args.mode
     if mode == "auto":

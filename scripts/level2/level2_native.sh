@@ -37,7 +37,6 @@ case "${MODEL}" in
 esac
 
 ETP_ROOT="${ETPNAV_ROOT:-${LLHN}/baselines/models/ETPNav}"
-ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
 L2_HABITAT="${LLHN}/datasets/level2/habitat"
 RUNNER="${MEMX}/baselines/run.py --mode basic --level 2 --pipeline native"
 JANUS_ROOT="${JANUS_ROOT:-${LLHN}/baselines/models/JanusVLN}"
@@ -51,6 +50,10 @@ STAGE="${STAGE:-all}"
 DRY_RUN="${DRY_RUN:-0}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
 RUN_ROOT="${RUN_ROOT:-${MEMX}/experiments_results/${RESULT_NAME}/level2/runs/${RUN_TAG}/native}"
+if [[ "${MODEL_KEY}" != "janus" ]]; then
+  ETP_ROOT="$(memx_prepare_etpnav "${LLHN}" "${ETP_ROOT}" "${RUN_ROOT}")"
+fi
+ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
 VLM_ENV_FILE="${VLM_ENV_FILE:-${UNILAVIRA_ROOT-}/.env}"
 
 log "model=${MODEL_LABEL} run_root=${RUN_ROOT}"

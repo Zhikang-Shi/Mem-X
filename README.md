@@ -61,6 +61,7 @@ baselines/models/
 ```bash
 mkdir -p baselines/models
 git clone https://github.com/MarSaKi/ETPNav.git baselines/models/ETPNav
+git -C baselines/models/ETPNav checkout 160e65fe5d23ad83d024d57d710e47be6892fc68
 git clone https://github.com/jacobkrantz/VLN-CE.git baselines/models/CMA
 git clone https://github.com/MIV-XJTU/JanusVLN.git baselines/models/JanusVLN
 git clone https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code.git baselines/models/uni-lavira-code
@@ -77,6 +78,13 @@ For Uni-LaViRA, the launcher uses the `sim-code/habitat` directory, moved to `ba
 | JanusVLN | `JANUS_ROOT` |
 
 ETPNav and Uni-LaViRA both provide a package named `vlnce_baselines`; import only one of them per process.
+
+Mem-X's ETPNav configs and benchmark interfaces are maintained in
+[`baselines/adapt/etpnav/`](baselines/adapt/etpnav/README.md). Level 1–3 launchers
+automatically prepare an adapted runtime under `RUN_ROOT/.runtime/etpnav/`,
+leaving the upstream checkout unchanged. This adds the sharding and trajectory
+export interfaces required to build M0. Use the ETPNav commit pinned above;
+unsupported source revisions fail before navigation starts.
 
 Download the required checkpoints separately, including the ETPNav checkpoint and JanusVLN_Extra weights. All four policies use the `memx` Conda environment.
 

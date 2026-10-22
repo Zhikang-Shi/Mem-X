@@ -1,0 +1,37 @@
+--- a/vlnce_baselines/common/base_il_trainer.py
++++ b/vlnce_baselines/common/base_il_trainer.py
+@@ -1,3 +1,4 @@
++from memx_etpnav_protocol import session_id_of
+ import json
+ import jsonlines
+ import os
+@@ -770,10 +771,10 @@
+         trajectories = list(trajectories.keys())
+         num_shards = int(getattr(self.config.EVAL, "NUM_SHARDS", 1) or 1)
+         shard_id = int(getattr(self.config.EVAL, "SHARD_ID", 0) or 0)
+-        if num_shards > 1:
+-            trajectories = trajectories[shard_id::num_shards]
+-        else:
+-            trajectories = trajectories[self.config.local_rank::self.config.GPU_NUMBERS]
++        if num_shards < 1 or not 0 <= shard_id < num_shards:
++            raise ValueError("EVAL.SHARD_ID must be in [0, EVAL.NUM_SHARDS)")
++        trajectories = trajectories[shard_id::num_shards]
++        trajectories = trajectories[self.config.local_rank::self.config.GPU_NUMBERS]
+ 
+         memory_root = str(getattr(self.config.EVAL, "MEMORY_ROOT", "") or "")
+         dump_memory = bool(getattr(self.config.EVAL, "DUMP_MEMORY", False))
+@@ -786,13 +787,7 @@
+             session_of = {}
+             for item in ep_data.get("episodes", []):
+                 info = item.get("info", {}) or {}
+-                session_of[str(item["episode_id"])] = str(
+-                    info.get("level1_session_id")
+-                    or info.get("level3_session_id")
+-                    or info.get("level3_task_id")
+-                    or info.get("level2_session_id")
+-                    or ""
+-                )
++                session_of[str(item["episode_id"])] = session_id_of(item["episode_id"], info)
+             stage = str(getattr(self.config.EVAL, "MEMORY_STAGE", "M0") or "M0")
+             load_root = str(getattr(self.config.EVAL, "LOAD_MEMORY_ROOT", "") or "")
+             load_stage = str(getattr(self.config.EVAL, "LOAD_MEMORY_STAGE", "M0") or "M0")

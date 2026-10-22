@@ -1,0 +1,81 @@
+--- a/vlnce_baselines/common/environments.py
++++ b/vlnce_baselines/common/environments.py
+@@ -51,6 +51,8 @@
+         self.video_dir = config.VIDEO_DIR
+         self.video_frames = []
+         self.plan_frames = []
++        self.pose_trace = []
++        self.simulator_step = 0
+ 
+     def get_reward_range(self) -> Tuple[float, float]:
+         # We don't use a reward for DAgger, but the baseline_registry requires
+@@ -94,6 +96,35 @@
+         ori = np.array([*(agent_state.rotation.imag), agent_state.rotation.real])
+         return (pos, ori)
+ 
++    def _current_pose(self):
++        agent_state = self._env.sim.get_agent_state()
++        rotation = agent_state.rotation
++        return {
++            "frame_index": len(self.pose_trace),
++            "simulator_step": int(self.simulator_step),
++            "position": [float(x) for x in np.asarray(agent_state.position).tolist()],
++            "rotation_xyzw": [
++                float(rotation.imag[0]),
++                float(rotation.imag[1]),
++                float(rotation.imag[2]),
++                float(rotation.real),
++            ],
++        }
++
++    def _record_pose(self, bump_step=False):
++        if bump_step:
++            self.simulator_step += 1
++        pose = self._current_pose()
++        if self.pose_trace:
++            prev = self.pose_trace[-1]
++            if prev["position"] == pose["position"] and prev["rotation_xyzw"] == pose["rotation_xyzw"]:
++                return
++        pose["frame_index"] = len(self.pose_trace)
++        self.pose_trace.append(pose)
++
++    def get_pose_trace(self):
++        return list(self.pose_trace)
++
+     def get_observation_at(self,
+         source_position: List[float],
+         source_rotation: List[Union[int, np.float64]],
+@@ -306,6 +337,9 @@
+     
+     def reset(self):
+         observations = self._env.reset()
++        self.pose_trace = []
++        self.simulator_step = 0
++        self._record_pose(bump_step=False)
+         if self.video_option:
+             info = self.get_info(observations)
+             self.video_frames = [
+@@ -335,6 +369,7 @@
+             self._env._task.measurements.update_measures(
+                 episode=self._env.current_episode, action=act, task=self._env.task 
+             )
++        self._record_pose(bump_step=True)
+         return observations
+ 
+     def turn(self, ang, vis_info):    
+@@ -359,6 +394,7 @@
+ 
+     def teleport(self, pos):
+         self._env.sim.set_agent_state(pos, quat_from_heading(0))
++        self._record_pose(bump_step=False)
+ 
+     def single_step_control(self, pos, tryout, vis_info):
+         act_f = HabitatSimActions.MOVE_FORWARD
+@@ -465,6 +501,7 @@
+ 
+             # 2. stop
+             observations = self._env.step(act)
++            self._record_pose(bump_step=True)
+             if self.video_option:
+                 info = self.get_info(observations)
+                 self.video_frames.append(

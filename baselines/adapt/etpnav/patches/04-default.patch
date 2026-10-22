@@ -1,0 +1,19 @@
+--- a/vlnce_baselines/config/default.py
++++ b/vlnce_baselines/config/default.py
+@@ -35,6 +35,16 @@
+ _C.EVAL.EVAL_NONLEARNING = False
+ _C.EVAL.NONLEARNING = CN()
+ _C.EVAL.NONLEARNING.AGENT = "RandomAgent"
++_C.EVAL.fast_eval = False
++# Level-2 native GraphMap persist (EP0 empty -> dump; EP1 load + update)
++_C.EVAL.MEMORY_ROOT = ""
++_C.EVAL.DUMP_MEMORY = False
++_C.EVAL.LOAD_GRAPHMAP = False
++_C.EVAL.MEMORY_STAGE = "M0"
++_C.EVAL.LOAD_MEMORY_ROOT = ""
++_C.EVAL.LOAD_MEMORY_STAGE = "M0"
++_C.EVAL.SHARD_ID = 0
++_C.EVAL.NUM_SHARDS = 1
+ 
+ # -----------------------------------------------------------------------------
+ # INFERENCE CONFIG

@@ -1,0 +1,44 @@
+{
+  "upstream_commit": "160e65fe5d23ad83d024d57d710e47be6892fc68",
+  "files": {
+    "run.py": {
+      "upstream_sha256": "554d5cf7d84565ccbfe9c89dde3379a13c7d0cfa35706ab010f1cfa29a7a9294",
+      "adapted_sha256": "3c2890b3c1cebe4002a383f49032d5ef766ae6ecae8c4dc0d07fb21812e0bc0c",
+      "patch": "01-run.patch"
+    },
+    "vlnce_baselines/common/base_il_trainer.py": {
+      "upstream_sha256": "139dd27b0563aab3fb8ac1a875e08f93d02186cfc32a94e93875f6c8ad22ca76",
+      "adapted_sha256": "d40e9a3df461c1f4f82eea0c0f2c5d7eea9042ab113154d9c2b64ece9f17cf8b",
+      "patch": "02-base_il_trainer.patch",
+      "recovered_sha256": "1623db658c9f2f039194cea9efe766c38dc2592ab2b613f29e6a004cb6642e21",
+      "upgrade_patch": "02-base_il_trainer-upgrade.patch"
+    },
+    "vlnce_baselines/common/environments.py": {
+      "upstream_sha256": "8cecbab215e3cd155e2a89de4066f1d3a876ceff6f4ab4ad3c7ca7d951b88b61",
+      "adapted_sha256": "94738cbd3aa8dfbd4769f7da68994d3b4cc1f5c35f42d22ccf843de8797de2f7",
+      "patch": "03-environments.patch"
+    },
+    "vlnce_baselines/config/default.py": {
+      "upstream_sha256": "0bce759b9b7d4d7b3824de481fb2a072b70170e8f260a9807cfc7f3b1875731e",
+      "adapted_sha256": "0d26345bc2058161216e692566c9c22c40ff28c3e0ec2523a12b62f47f6ca0a5",
+      "patch": "04-default.patch"
+    },
+    "vlnce_baselines/models/graph_utils.py": {
+      "upstream_sha256": "d3f6b4b1a8d57b45d071fa920174974a953e283ac12ce0715daffb24033778ea",
+      "adapted_sha256": "0f8031fabfbe69692e5f541f51546b856e82d30385d96494e689707974c35b10",
+      "patch": "05-graph_utils.patch"
+    },
+    "vlnce_baselines/ss_trainer_ETP.py": {
+      "upstream_sha256": "3d76fc204221550945d5eeb7dcdb9766bdce1e66f72b98dfc34af3f31a5ae567",
+      "adapted_sha256": "f018b884c885e7abef1e0bf6192819dbbab53722bdeccfe9dac5fd298d6d1ff7",
+      "patch": "06-ss_trainer_ETP.patch",
+      "recovered_sha256": "9266a482480794b663d250a59d89bb67acdd2fb41854dd33dcd759de30b15607",
+      "upgrade_patch": "06-ss_trainer_ETP-upgrade.patch"
+    },
+    "habitat_extensions/task.py": {
+      "upstream_sha256": "39d3aacb1da2523404013b5f906b8b54dfa7161c5a49e9ea5f91d0540cb43400",
+      "adapted_sha256": "5953924f0c33b1948bffa91743290f580fed6611fca542a5a9725b91d0891663",
+      "patch": "07-task.patch"
+    }
+  }
+}

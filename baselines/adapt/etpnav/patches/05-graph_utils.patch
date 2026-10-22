@@ -1,0 +1,158 @@
+--- a/vlnce_baselines/models/graph_utils.py
++++ b/vlnce_baselines/models/graph_utils.py
+@@ -3,6 +3,7 @@
+ from copy import deepcopy
+ import networkx as nx
+ import matplotlib.pyplot as plt
++import torch
+ from habitat.tasks.utils import cartesian_to_polar
+ from habitat.utils.geometry_utils import quaternion_rotate_vector, quaternion_from_coeff
+ 
+@@ -174,10 +175,15 @@
+         min_vp = None if min_dis > self.loc_noise else min_vp
+         return min_vp
+     
++    def _next_node_id(self):
++        ids = [int(k) for k in self.node_pos.keys() if str(k).isdigit()]
++        return str((max(ids) + 1) if ids else 0)
++
+     def identify_node(self, cur_pos, cur_ori, cand_ang, cand_dis):
+-        # assume no repeated node
+-        # since action is restricted to ghosts
+-        cur_vp = str(len(self.node_pos))
++        # Snap to an existing visited node when persisting GraphMap across episodes.
++        # Official per-episode maps start empty, so this matches native IDs.
++        localized = self._localize(np.asarray(cur_pos), self.node_pos)
++        cur_vp = localized if localized is not None else self._next_node_id()
+         cand_vp = [f'{cur_vp}_{str(i)}' for i in range(len(cand_ang))]
+         cand_pos = [p for p in estimate_cand_pos(cur_pos, cur_ori, cand_ang, cand_dis)]
+         return cur_vp, cand_vp, cand_pos
+@@ -196,7 +202,7 @@
+                            cand_real_pos):
+         # 1. connect prev_vp
+         self.graph_nx.add_node(cur_vp)
+-        if prev_vp is not None:
++        if prev_vp is not None and prev_vp != cur_vp:
+             prev_pos = self.node_pos[prev_vp]
+             dis = calc_position_distance(prev_pos, cur_pos)
+             self.graph_nx.add_edge(prev_vp, cur_vp, weight=dis)
+@@ -293,8 +299,13 @@
+                 )
+                 rel_angles.append([rel_heading, rel_elevation])
+                 front_dis, front_vp = self.front_to_ghost_dist(vp)
+-                shortest_dist = self.shortest_dist[cur_vp][front_vp] + front_dis
+-                shortest_step = len(self.shortest_path[cur_vp][front_vp]) + 1
++                hop = self.shortest_dist.get(cur_vp, {}).get(front_vp)
++                if hop is None:
++                    shortest_dist = MAX_DIST
++                    shortest_step = MAX_STEP
++                else:
++                    shortest_dist = hop + front_dis
++                    shortest_step = len(self.shortest_path[cur_vp][front_vp]) + 1
+                 rel_dists.append(
+                     [rel_dist / MAX_DIST, 
+                     shortest_dist / MAX_DIST, 
+@@ -309,8 +320,13 @@
+                     cur_pos, vp_pos, base_heading, base_elevation, to_clock=True,
+                 )
+                 rel_angles.append([rel_heading, rel_elevation])
+-                shortest_dist = self.shortest_dist[cur_vp][vp]
+-                shortest_step = len(self.shortest_path[cur_vp][vp])
++                hop = self.shortest_dist.get(cur_vp, {}).get(vp)
++                if hop is None:
++                    shortest_dist = MAX_DIST
++                    shortest_step = MAX_STEP
++                else:
++                    shortest_dist = hop
++                    shortest_step = len(self.shortest_path[cur_vp][vp])
+                 rel_dists.append(
+                     [rel_dist / MAX_DIST, 
+                     shortest_dist / MAX_DIST, 
+@@ -320,3 +336,87 @@
+         rel_dists = np.array(rel_dists).astype(np.float32)
+         rel_ang_fts = get_angle_fts(rel_angles[:, 0], rel_angles[:, 1], angle_feat_size=4)
+         return np.concatenate([rel_ang_fts, rel_dists], 1)
++
++    @staticmethod
++    def _to_numpy(value):
++        if torch.is_tensor(value):
++            return value.detach().cpu().numpy()
++        return np.asarray(value)
++
++    def graph_hop(self, src, dst, default=MAX_DIST):
++        hop = self.shortest_dist.get(src, {}).get(dst)
++        return default if hop is None else hop
++
++    def export_state(self):
++        ghost_embeds = {}
++        for vp, (feat, count) in self.ghost_embeds.items():
++            ghost_embeds[vp] = [self._to_numpy(feat), int(count)]
++        return {
++            "schema": "etpnav_graphmap_v1",
++            "has_real_pos": bool(self.has_real_pos),
++            "loc_noise": float(self.loc_noise),
++            "merge_ghost": bool(self.merge_ghost),
++            "ghost_aug": float(self.ghost_aug),
++            "ghost_cnt": int(self.ghost_cnt),
++            "node_pos": {vp: np.asarray(pos) for vp, pos in self.node_pos.items()},
++            "node_embeds": {vp: self._to_numpy(ft) for vp, ft in self.node_embeds.items()},
++            "node_stepId": dict(self.node_stepId),
++            "node_stop_scores": dict(self.node_stop_scores),
++            "graph_edges": [
++                (u, v, float(data.get("weight", 0.0)))
++                for u, v, data in self.graph_nx.edges(data=True)
++            ],
++            "ghost_pos": {vp: [np.asarray(p) for p in pos] for vp, pos in self.ghost_pos.items()},
++            "ghost_mean_pos": {vp: np.asarray(pos) for vp, pos in self.ghost_mean_pos.items()},
++            "ghost_embeds": ghost_embeds,
++            "ghost_fronts": {vp: list(fronts) for vp, fronts in self.ghost_fronts.items()},
++            "ghost_real_pos": {
++                vp: [np.asarray(p) for p in pos] for vp, pos in self.ghost_real_pos.items()
++            },
++        }
++
++    def load_state(self, state, device=None):
++        if not state:
++            return
++        if device is None:
++            device = torch.device("cpu")
++
++        def as_tensor(value):
++            tensor = torch.as_tensor(np.asarray(value), dtype=torch.float32)
++            return tensor.to(device)
++
++        self.has_real_pos = bool(state.get("has_real_pos", self.has_real_pos))
++        self.loc_noise = float(state.get("loc_noise", self.loc_noise))
++        self.merge_ghost = bool(state.get("merge_ghost", self.merge_ghost))
++        self.ghost_aug = float(state.get("ghost_aug", self.ghost_aug))
++        self.ghost_cnt = int(state.get("ghost_cnt", 0))
++        self.node_pos = {vp: np.asarray(pos) for vp, pos in state.get("node_pos", {}).items()}
++        self.node_embeds = {vp: as_tensor(ft) for vp, ft in state.get("node_embeds", {}).items()}
++        self.node_stepId = dict(state.get("node_stepId", {}))
++        self.node_stop_scores = dict(state.get("node_stop_scores", {}))
++        self.graph_nx = nx.Graph()
++        self.graph_nx.add_nodes_from(self.node_pos.keys())
++        for edge in state.get("graph_edges", []):
++            u, v, weight = edge[0], edge[1], float(edge[2]) if len(edge) > 2 else 0.0
++            self.graph_nx.add_edge(u, v, weight=weight)
++        self.ghost_pos = {
++            vp: [np.asarray(p) for p in pos] for vp, pos in state.get("ghost_pos", {}).items()
++        }
++        self.ghost_mean_pos = {
++            vp: np.asarray(pos) for vp, pos in state.get("ghost_mean_pos", {}).items()
++        }
++        self.ghost_embeds = {}
++        for vp, payload in state.get("ghost_embeds", {}).items():
++            feat, count = payload[0], int(payload[1])
++            self.ghost_embeds[vp] = [as_tensor(feat), count]
++        self.ghost_fronts = {vp: list(fronts) for vp, fronts in state.get("ghost_fronts", {}).items()}
++        self.ghost_real_pos = {
++            vp: [np.asarray(p) for p in pos] for vp, pos in state.get("ghost_real_pos", {}).items()
++        }
++        self.ghost_aug_pos = deepcopy(self.ghost_mean_pos)
++        if self.node_pos:
++            self.shortest_path = dict(nx.all_pairs_dijkstra_path(self.graph_nx))
++            self.shortest_dist = dict(nx.all_pairs_dijkstra_path_length(self.graph_nx))
++        else:
++            self.shortest_path = {}
++            self.shortest_dist = {}

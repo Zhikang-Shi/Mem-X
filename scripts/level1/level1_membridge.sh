@@ -43,7 +43,6 @@ case "${MODEL}" in
 esac
 
 ETP_ROOT="${ETPNAV_ROOT:-${LLHN}/baselines/models/ETPNav}"
-ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
 L1_DATA="${LLHN}/datasets/level1/habitat"
 RUNNER="${MEMX}/baselines/run.py --mode memory --level 1 --pipeline membridge"
 EP0_RUNNER="${MEMX}/baselines/run.py --mode basic --level 1 --pipeline membridge"
@@ -60,6 +59,10 @@ QUERY_ROLES="${QUERY_ROLES:-ep1 ep2 ep3 ep4}"
 ROUTE_SOURCE="${ROUTE_SOURCE:-live}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
 RUN_ROOT="${RUN_ROOT:-${MEMX}/experiments_results/${RESULT_NAME}/level1/runs/${RUN_TAG}}"
+if [[ "${MODEL_KEY}" != "janus" ]]; then
+  ETP_ROOT="$(memx_prepare_etpnav "${LLHN}" "${ETP_ROOT}" "${RUN_ROOT}")"
+fi
+ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
 VLM_ENV_FILE="${VLM_ENV_FILE:-${UNILAVIRA_ROOT-}/.env}"
 
 log "model=${MODEL_LABEL} run_root=${RUN_ROOT} coordinate_frame=habitat_world route_source=${ROUTE_SOURCE}"

@@ -61,7 +61,6 @@ esac
 
 RUNNER="${LLHN}/baselines/run.py"
 ETP_ROOT="${ETPNAV_ROOT:-${LLHN}/baselines/models/ETPNav}"
-ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
 L3_HABITAT="${LLHN}/datasets/level3/habitat"
 
 GPU_IDS="${GPU_IDS:-0 1 2 3 4 5 6 7}"
@@ -70,6 +69,10 @@ STAGE="${STAGE:-all}"
 DRY_RUN="${DRY_RUN:-0}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
 RUN_ROOT="${RUN_ROOT:-${LLHN}/experiments_results/${RESULT_NAME}/level3/runs/${RUN_TAG}}"
+if [[ "${MODEL_KEY}" != "janus" ]]; then
+  ETP_ROOT="$(memx_prepare_etpnav "${LLHN}" "${ETP_ROOT}" "${RUN_ROOT}")"
+fi
+ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
 EP2_UPDATE_MEMORY="${EP2_UPDATE_MEMORY:-full}"
 export MODEL MODEL_KEY RUN_TAG RUN_ROOT EP2_UPDATE_MEMORY
 
@@ -156,7 +159,7 @@ run_role() {
     read -r -a WORKERS <<< "${GPU_IDS}"
   fi
   for worker in "${WORKERS[@]}"; do
-    local py_path="${ETPNAV_ROOT:-${LLHN}/baselines/models/ETPNav}:${LLHN}:${LLHN}/baselines/adapt:${LLHN}/membridge/localization:${LLHN}/membridge/runners"
+    local py_path="${ETP_ROOT}:${LLHN}:${LLHN}/baselines/adapt:${LLHN}/membridge/localization:${LLHN}/membridge/runners"
     if [[ "${MODEL_KEY}" == "janus" ]]; then
       py_path="${JANUS_ROOT}/src:${py_path}"
     fi

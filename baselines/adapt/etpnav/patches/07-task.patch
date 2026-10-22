@@ -1,0 +1,55 @@
+--- a/habitat_extensions/task.py
++++ b/habitat_extensions/task.py
+@@ -95,12 +95,12 @@
+             ]
+ 
+         if config.EPISODES_ALLOWED is not None:
+-            ep_ids_before = {ep.episode_id for ep in self.episodes}
+-            ep_ids_to_purge = ep_ids_before - set([ int(id) for id in config.EPISODES_ALLOWED])
+-            self.episodes = [
+-                episode
+-                for episode in self.episodes
+-                if episode.episode_id not in ep_ids_to_purge
++            ep_ids_before = {str(ep.episode_id) for ep in self.episodes}
++            ep_ids_to_purge = ep_ids_before - set(map(str, config.EPISODES_ALLOWED))
++            self.episodes = [
++                episode
++                for episode in self.episodes
++                if str(episode.episode_id) not in ep_ids_to_purge
+             ]
+ 
+     def from_json(
+@@ -123,7 +123,17 @@
+ 
+                 episode.scene_id = os.path.join(scenes_dir, episode.scene_id)
+ 
+-            episode.instruction = InstructionData(**episode.instruction)
++            instruction = dict(episode.instruction)
++            if not instruction.get("instruction_tokens"):
++                from transformers import BertTokenizer
++                if not hasattr(self, "_memx_tokenizer"):
++                    self._memx_tokenizer = BertTokenizer.from_pretrained(
++                        "bert_config/bert-base-uncased", local_files_only=True
++                    )
++                instruction["instruction_tokens"] = self._memx_tokenizer.encode(
++                    instruction["instruction_text"], add_special_tokens=True
++                )
++            episode.instruction = InstructionData(**instruction)
+             if episode.goals is not None:
+                 for g_index, goal in enumerate(episode.goals):
+                     episode.goals[g_index] = NavigationGoal(**goal)
+@@ -207,12 +217,12 @@
+             ]
+ 
+         if config.EPISODES_ALLOWED is not None:
+-            ep_ids_before = {ep.episode_id for ep in self.episodes}
++            ep_ids_before = {str(ep.episode_id) for ep in self.episodes}
+             ep_ids_to_purge = ep_ids_before - set(config.EPISODES_ALLOWED)
+             self.episodes = [
+                 episode
+                 for episode in self.episodes
+-                if episode.episode_id not in ep_ids_to_purge
++                if str(episode.episode_id) not in ep_ids_to_purge
+             ]
+ 
+     def from_json(

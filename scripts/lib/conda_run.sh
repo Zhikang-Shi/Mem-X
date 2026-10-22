@@ -2,6 +2,14 @@
 # Run a launcher command in the Mem-X conda environment.
 # CONDA_ENV selects the environment name. The default is memx.
 
+# Resolve a runtime built from upstream ETPNav plus the tracked Mem-X adapter.
+memx_prepare_etpnav() {
+  local repo="$1" source_root="$2" run_root="$3"
+  python3 "${repo}/baselines/adapt/etpnav_runtime.py" \
+    --source "${source_root}" --repo "${repo}" \
+    --runtime-root "${run_root}/.runtime/etpnav"
+}
+
 memx_activate() {
   local env_name="${CONDA_ENV:-memx}"
   if [[ "${CONDA_DEFAULT_ENV:-}" == "${env_name}" && -n "${CONDA_PREFIX:-}" ]]; then

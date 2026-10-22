@@ -1,0 +1,37 @@
+--- a/run.py
++++ b/run.py
+@@ -3,10 +3,34 @@
+ import argparse
+ import random
+ import os
++import sys
++import types
+ import numpy as np
+ import torch
+ from habitat import logger
+ from habitat_baselines.common.baseline_registry import baseline_registry
++
++def _stub(name: str):
++    mod = types.ModuleType(name)
++    mod.__spec__ = types.SimpleNamespace(
++        name=name, loader=None, origin=None, submodule_search_locations=[]
++    )
++    sys.modules.setdefault(name, mod)
++    return mod
++
++# ss_trainer_ETP imports tensorflow but never uses it.
++_stub("tensorflow")
++_boto3 = _stub("boto3")
++_botocore = _stub("botocore")
++_botocore_ex = _stub("botocore.exceptions")
++_botocore_ex.ClientError = type("ClientError", (Exception,), {})
++_botocore.exceptions = _botocore_ex
++try:
++    import transformers as _transformers
++
++    sys.modules.setdefault("pytorch_transformers", _transformers)
++except Exception:
++    pass
+ 
+ import habitat_extensions  # noqa: F401
+ import vlnce_baselines  # noqa: F401
