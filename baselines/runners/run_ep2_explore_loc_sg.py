@@ -571,7 +571,20 @@ class ETPNavSuffixPolicy:
 
 
 def make_janus_env(args: argparse.Namespace):
-    """Habitat env from the Janus Level-3 config. StreamVLN's Habitat, not ETPNav's."""
+    """Janus RGB-D environment for pinned Habitat or its upstream Hydra runtime."""
+    import habitat
+
+    # The shared memx environment pins Habitat 0.1.7. Janus' upstream
+    # evaluation environment uses Hydra, but the policy only needs RGB-D.
+    if not hasattr(habitat.config, "read_write"):
+        from janus_env import make_legacy_env
+
+        env = make_legacy_env(args)
+        return env, hydra_like_sensor_config(
+            PROTOCOL_WIDTH, PROTOCOL_HEIGHT, args.sim_gpu_id,
+            float(getattr(args, "turn_angle", TURN_ANGLE_DEG)),
+        )
+
     root = Path(args.janus_root)
     if (root / "src" / "protocol_benchmark.py").is_file():
         code, tree = root / "src", root

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -116,7 +117,7 @@ def run_episode(
     instruction = instruction_of(episode)
     pose = pose_from_env(env, 0, 0)
     if reset_memory:
-        policy.begin_episode(pose["position"], 0.0)
+        policy.begin_episode(pose["position"], yaw_from_xyzw(pose["rotation_xyzw"]))
     else:
         policy.history = []
         policy._key = None
@@ -125,7 +126,8 @@ def run_episode(
     actions: list[str] = []
     while len(actions) < max_steps and not env.episode_over:
         action, _, _ = policy.observe_and_act(
-            env, instruction, pose["position"], 0.0, act=True
+            env, instruction, pose["position"],
+            yaw_from_xyzw(pose["rotation_xyzw"]), act=True
         )
         if int(action) == int(Actions.STOP):
             env.step(int(Actions.STOP))

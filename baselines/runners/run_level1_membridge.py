@@ -164,7 +164,7 @@ def load_saved_route(session_id: str, role: str, episode_id: str, instruction: s
     }
 
 
-def enable_live_semantic_update() -> None:
+def enable_live_semantic_update(nav_model: str = "") -> None:
     from run_ep2_memory_janus import apply_ep2_update_memory
 
     apply_ep2_update_memory("full")
@@ -176,7 +176,9 @@ def enable_live_semantic_update() -> None:
             "INHERIT_SG_DINOV3_MODEL": os.environ.get("MODELS_DIR", "") + "/facebook/dinov3",
             "INHERIT_SG_DINOV3_REPO": os.environ.get("MODELS_DIR", "") + "/source/dinov3",
             "INHERIT_SG_TEXT_ENCODER": os.environ.get("MODELS_DIR", "") + "/all-MiniLM-L6-v2",
-            "INHERIT_SG_SAM3_CATEGORY_BATCH_SIZE": "15",
+            "INHERIT_SG_SAM3_CATEGORY_BATCH_SIZE": os.environ.get(
+                "INHERIT_SG_SAM3_CATEGORY_BATCH_SIZE", "5" if nav_model == "janus" else "15"
+            ),
             "INHERIT_SG_KEYFRAME_FILTER": "1",
         }
     )
@@ -368,7 +370,7 @@ def run_one(env, habitat_config, policy, episode, args) -> None:
         shutil.rmtree(work)
     work.mkdir(parents=True)
     install_memory_environment(args, work, memory)
-    enable_live_semantic_update()
+    enable_live_semantic_update(args.nav_model)
     from membridge.habitat_runtime.online_adapter import OnlineINHeritSGBuilder
 
     class _Repeat:
@@ -622,8 +624,8 @@ def main() -> int:
             print(f"[l1-mb] FAIL {session_id_of(episode)} {type(exc).__name__}: {exc}", flush=True)
     env.close()
     if failed:
-        print(f"[l1-mb] {failed} episodes failed in {args.role}; continuing", flush=True)
-    return 0
+        print(f"[l1-mb] {failed} episodes failed in {args.role}", flush=True)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
