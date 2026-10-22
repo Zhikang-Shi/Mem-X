@@ -78,7 +78,7 @@ For Uni-LaViRA, the launcher uses the `sim-code/habitat` directory, moved to `ba
 
 ETPNav and Uni-LaViRA both provide a package named `vlnce_baselines`; import only one of them per process.
 
-Download the required checkpoints separately, including the ETPNav checkpoint and JanusVLN_Extra weights. The Janus launchers also require a `streamvln` environment, provided through `JANUS_ENV`.
+Download the required checkpoints separately, including the ETPNav checkpoint and JanusVLN_Extra weights. All four policies use the `memx` Conda environment.
 
 SAM3 and DINOv3 are shared auxiliary models. Put the weights and the source checkouts under one directory and point `MODELS_DIR` at it:
 
@@ -219,8 +219,8 @@ Choose a level, pipeline, and policy:
 # Level 1: ETPNav + MemBridge
 PIPELINE=membridge MODEL=etpnav bash scripts/level1/level1.sh
 
-# Level 2: native JanusVLN (requires JANUS_ENV)
-JANUS_ENV=/path/to/streamvln GPU_PAIRS="0,1" \
+# Level 2: native JanusVLN
+GPU_PAIRS="0,1" \
   PIPELINE=native MODEL=janus bash scripts/level2/level2.sh
 
 # Level 3: CMA + MemBridge; the policy can also be a positional argument
