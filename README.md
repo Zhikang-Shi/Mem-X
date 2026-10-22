@@ -91,7 +91,14 @@ models/source/dinov3
 export MODELS_DIR="$PWD/models"
 ```
 
-`models/source/sam3` is the [SAM3](https://github.com/facebookresearch/sam3) code. `models/source/dinov3` is the [DINOv3](https://github.com/facebookresearch/dinov3) code and must contain `hubconf.py`. The same directory also holds MiniLM at `models/all-MiniLM-L6-v2` and BERT at `models/bert-base-uncased`.
+`models/source/sam3` is the [SAM3](https://github.com/facebookresearch/sam3) code. `models/source/dinov3` is the [DINOv3](https://github.com/facebookresearch/dinov3) code and must contain `hubconf.py`.
+
+Download the text models from Hugging Face into the same models directory:
+
+| Model | Local directory |
+| --- | --- |
+| [BERT base uncased](https://huggingface.co/google-bert/bert-base-uncased) | `models/bert-base-uncased/` |
+| [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | `models/all-MiniLM-L6-v2/` |
 
 <a id="dataset"></a>
 
