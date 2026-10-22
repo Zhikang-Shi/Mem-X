@@ -24,13 +24,13 @@ Mem-X evaluates whether an embodied agent can use memory across episodes to reca
 
 The benchmark evaluates four navigation policies on the same episodes: [ETPNav](https://github.com/MarSaKi/ETPNav), [CMA](https://github.com/jacobkrantz/VLN-CE), [Uni-LaViRA](https://github.com/NJU-R-L-Group-Embodied-Lab/uni-lavira-code), and [JanusVLN](https://github.com/MIV-XJTU/JanusVLN). Each policy can run with MemBridge or through its native navigation pipeline.
 
-**Contents:** [Setup](#setup) · [Running](#running) · [Repository layout](#repository-layout) · [Contributing](#contributing) · [License](#license)
+**Contents:** [🛠️ Setup](#setup) · [🚀 Running](#running) · [📁 Repository layout](#repository-layout) · [🤝 Contributing](#contributing) · [📄 License](#license)
 
-## Setup
+## <a id="setup"></a>🛠️ Setup
 
 Run the commands below from the repository root. Model checkouts, datasets, scene meshes, and model weights are stored locally and are not included in this repository.
 
-### 1. Conda environment
+### 🐍 1. Conda environment
 
 Create the Conda environment using the pinned dependencies in [environment.yml](environment.yml):
 
@@ -46,7 +46,7 @@ The environment uses Python **3.8.20**, PyTorch **2.4.1+cu118**, and Transformer
 
 Follow the official installation instructions linked from [aihabitat.org](https://aihabitat.org/). The packages are imported as `habitat_sim` and `habitat`. The Habitat-Sim build also provides the Magnum Python bindings.
 
-### 2. Baseline models
+### 🤖 2. Baseline models
 
 Clone the baseline repositories into `baselines/models/`:
 
@@ -104,7 +104,7 @@ Download the text models from Hugging Face into the same models directory:
 
 <a id="dataset"></a>
 
-### 3. Benchmark dataset
+### 📦 3. Benchmark dataset
 
 Download the episodes from [KangThomas/Mem-X](https://huggingface.co/datasets/KangThomas/Mem-X/tree/main) into `datasets/` using the Hugging Face CLI:
 
@@ -155,7 +155,7 @@ done
 
 Each episode has a unique `episode_id`, such as `level1_00800_002_ep1` or `level3_000_ep0`. The `info.task_type` field is `basic` or `memory`. Basic tasks build memory and are shared by the native and +MemBridge pipelines. An episode succeeds when its final Habitat geodesic distance to the goal is **at most 3 m**; a STOP action is not required.
 
-### 4. Scene meshes
+### 🏠 4. Scene meshes
 
 Mem-X uses the **HM3D v0.2 validation split** with semantic annotations. Download the Habitat archive, semantic annotations, and semantic configs from the **val** rows in the official [Matterport HM3D repository](https://github.com/matterport/habitat-matterport-3dresearch). Access is subject to its academic and non-commercial terms; accept those terms before downloading.
 
@@ -171,7 +171,7 @@ export SCENES_DIR="$PWD/scenes"
 
 Every episode's `scene_id` is relative to `SCENES_DIR`. The local `scenes/` directory is gitignored.
 
-### 5. API
+### 🔑 5. API
 
 Configure the API base URL, model name, and API key in a local `vlm.env` file:
 
@@ -201,7 +201,7 @@ export VLM_ENV_FILE="$PWD/vlm.env"
 
 
 
-## Running
+## <a id="running"></a>🚀 Running
 
 After completing setup, configure the paths and GPU workers:
 
@@ -243,7 +243,7 @@ DRY_RUN=1 PIPELINE=membridge MODEL=etpnav bash scripts/level1/level1.sh
 
 Results are written under `experiments_results/<policy>/levelN/` by default. The launchers print the run directory at startup; set `RUN_ROOT` to override it.
 
-## Repository layout
+## <a id="repository-layout"></a>📁 Repository layout
 
 ```text
 Mem-X/
@@ -264,7 +264,7 @@ Mem-X/
 └── environment.yml     # Pinned Conda environment
 ```
 
-## Contributing
+## <a id="contributing"></a>🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [SECURITY.md](SECURITY.md) to report security issues. Run the test suite with:
 
@@ -272,7 +272,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [SECURITY
 python -m unittest discover -s tests -v
 ```
 
-## License
+## <a id="license"></a>📄 License
 
 Mem-X is released under the [Apache License 2.0](LICENSE).
 
