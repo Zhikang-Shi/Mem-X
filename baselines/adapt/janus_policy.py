@@ -120,6 +120,9 @@ class JanusVLNRunner:
                 torch.set_default_dtype(torch.float32)
         if model is None:
             raise RuntimeError(f"JanusVLN failed to load: {last_error}")
+        from janus_attention import install_segmented_vision_sdpa
+
+        install_segmented_vision_sdpa(model)
         if vggt_device != language_device:
             model.vggt.to(vggt_device)
             model.merger.to(vggt_device)
@@ -128,6 +131,11 @@ class JanusVLNRunner:
             model.lm_head.to(language_device)
             if hasattr(model, "classifier"):
                 model.classifier.to(language_device)
+            # Upstream adds merger output to the language GPU's visual
+            # embeddings. Move that output across the split-device boundary.
+            model.merger.register_forward_hook(
+                lambda _module, _inputs, output: output.to(language_device)
+            )
             torch.cuda.empty_cache()
         _restore_gamma_parameters(model, pretrained)
         self.model = model
@@ -280,6 +288,8 @@ class JanusDiscretePolicy:
         images = _sample_history(self.history, self.num_history)
         answer = str(self.model.call_model(images, instruction, self.actor_steps)[0]).strip().upper()
         action = ACTIONS.get(answer, ACTIONS["STOP"])
+        if self.actor_steps % 25 == 0:
+            print(f"[janus] step={self.actor_steps} action={answer} history={len(images)}", flush=True)
         return int(action), None, None
 
 
