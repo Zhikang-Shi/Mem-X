@@ -1,6 +1,8 @@
 <div align="center">
 
-# Mem-X
+<h1 align="center">
+  <img src="assets/mem-x-logo.png" alt="Mem-X" width="300">
+</h1>
 
 **A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation**
 
