@@ -5,9 +5,10 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
+import quaternion
 from PIL import Image
 
 
@@ -20,7 +21,17 @@ class _SilentViz:
         return _noop
 
 
-def _action_id(text: str) -> int:
+def _action_id(text: Any) -> int:
+    if isinstance(text, Mapping):
+        stop = text.get("stop_signal", text.get("stop", False))
+        if stop is True or (isinstance(stop, str) and stop.lower() == "true"):
+            return 0
+        action = str(text.get("action", "")).strip().lower()
+        if action == "stop":
+            return 0
+        if action == "backtrack":
+            raise NotImplementedError("Uni-LaViRA waypoint backtracking requires a waypoint controller")
+        text = text.get("direction", action)
     name = str(text or "").lower()
     if "stop" in name:
         return 0
@@ -87,16 +98,24 @@ class UniLaViRADiscretePolicy:
         )
 
     def _views(self, env: Any) -> tuple[Image.Image, list[dict]]:
-        obs = env.sim.get_sensor_observations()
-        rgb = np.asarray(obs["rgb"], dtype=np.uint8)[..., :3]
-        depth = np.asarray(obs["depth"], dtype=np.float32)
-        if depth.ndim == 3:
-            depth = depth[..., 0]
-        views = [
-            {"rgb": rgb, "depth": depth, "angle": angle, "step": self.actor_steps}
-            for angle in (0, 90, 180, 270)
-        ]
-        return Image.fromarray(rgb).convert("RGB"), views
+        state = env.sim.get_agent_state()
+        views = []
+        for angle in (0, 90, 180, 270):
+            rotation = quaternion.from_rotation_vector(
+                [0.0, float(np.deg2rad(angle)), 0.0]
+            ) * state.rotation
+            obs = env.sim.get_observations_at(
+                position=state.position, rotation=rotation,
+                keep_agent_at_new_pose=False,
+            )
+            if obs is None:
+                raise RuntimeError(f"Could not render Uni-LaViRA panorama at {angle} degrees")
+            rgb = np.asarray(obs["rgb"], dtype=np.uint8)[..., :3].copy()
+            depth = np.asarray(obs["depth"], dtype=np.float32).copy()
+            if depth.ndim == 3:
+                depth = depth[..., 0]
+            views.append({"rgb": rgb, "depth": depth, "angle": angle, "step": self.actor_steps})
+        return Image.fromarray(views[0]["rgb"]).convert("RGB"), views
 
     def observe_and_act(
         self,
@@ -126,4 +145,6 @@ class UniLaViRADiscretePolicy:
             history_images=history,
         )
         self.actor_steps += 1
-        return _action_id(str(decision)), None, None
+        action = _action_id(decision)
+        print(f"[unilavira] step={self.actor_steps} action={action}", flush=True)
+        return action, None, None
