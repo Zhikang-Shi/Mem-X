@@ -185,6 +185,7 @@ run_discrete_ep0() {
       PYTHONPATH="${ETP_ROOT}/third_party/CLIP:${ETP_ROOT}${extra_py}:${MEMX}/baselines/adapt:${MEMX}:${MEMX}/membridge/localization${PYTHONPATH:+:${PYTHONPATH}}" \
       memx_spawn "${worker}" "${LLHN}" "${logf}" \
         python ${EP0_RUNNER} \
+          --etpnav-root "${ETP_ROOT}" \
           --task-config "${ETP_ROOT}/run_r2r/hm3d_level1.yaml" \
           --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 ${flags}
     fi
