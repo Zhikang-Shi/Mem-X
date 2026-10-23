@@ -41,7 +41,18 @@ def _tokens_to_ids(text: str, stoi: Mapping[str, int], pad_to: int = 200) -> np.
 def _load_stoi(path: Path) -> dict[str, int]:
     with gzip.open(path, "rt", encoding="utf-8") as handle:
         payload = json.load(handle)
-    return dict(payload["instruction_vocab"]["stoi"])
+    vocab = payload["instruction_vocab"]
+    if "stoi" in vocab:
+        return dict(vocab["stoi"])
+    return {word: index for index, word in enumerate(vocab["word_list"])}
+
+
+def _validate_vocab(stoi: Mapping[str, int], vocab_size: int) -> None:
+    if set(stoi.values()) != set(range(vocab_size)):
+        raise ValueError(
+            f"CMA vocabulary does not match its {vocab_size}-row embedding table; "
+            "use R2R_VLNCE_v1-3_preprocessed/train/train.json.gz"
+        )
 
 
 def _resize_rgb(rgb: np.ndarray, size: int) -> np.ndarray:
@@ -59,8 +70,9 @@ def _resize_depth(depth: np.ndarray, size: int) -> np.ndarray:
     image = np.asarray(depth, dtype=np.float32)
     if image.ndim == 3:
         image = image[..., 0]
-    if image.size and float(np.nanmax(image)) > 1.5:
-        image = np.clip(image / MAX_DEPTH_M, 0.0, 1.0)
+    # The shared Habitat runner explicitly returns depth in meters, including
+    # frames whose farthest pixel is closer than 1.5 m.
+    image = np.clip(image / MAX_DEPTH_M, 0.0, 1.0)
     resized = cv2.resize(image, (size, size), interpolation=cv2.INTER_NEAREST)
     return resized.astype(np.float32)[..., None]
 
@@ -106,14 +118,12 @@ class CMADiscretePolicy:
         os.chdir(root)
         try:
             config = get_config(str(Path(args.exp_config).resolve()))
-            ddppo = Path("/etpnav/data/ddppo-models/gibson-2plus-resnet50.pth")
-            if not ddppo.is_file():
-                ddppo = (
-                    Path("/home/shizk/LifeLongHomeNav/baseline_experiment/ETPNav/data")
-                    / "ddppo-models/gibson-2plus-resnet50.pth"
-                )
+            ddppo = Path(args.etpnav_root).resolve() / "data/ddppo-models/gibson-2plus-resnet50.pth"
             config.defrost()
             config.MODEL.DEPTH_ENCODER.ddppo_checkpoint = str(ddppo)
+            # The evaluation checkpoint contains the complete embedding table.
+            # Initialize its shape locally instead of requiring a second GloVe file.
+            config.MODEL.INSTRUCTION_ENCODER.use_pretrained_embeddings = False
             config.freeze()
             self.policy = CMAPolicy.from_config(
                 config, observation_space, action_space
@@ -126,7 +136,10 @@ class CMADiscretePolicy:
             (key[7:] if key.startswith("module.") else key): value
             for key, value in state.items()
         }
-        self.policy.load_state_dict(cleaned, strict=False)
+        self.policy.load_state_dict(cleaned, strict=True)
+        vocab_size = self.policy.net.instruction_encoder.embedding_layer.num_embeddings
+        _validate_vocab(self.stoi, vocab_size)
+        print(f"[cma] loaded full checkpoint: {args.ckpt}", flush=True)
         self.policy.eval()
         hidden = int(config.MODEL.STATE_ENCODER.hidden_size)
         layers = int(self.policy.net.num_recurrent_layers)

@@ -176,8 +176,9 @@ run_discrete_ep0() {
       local extra_py="" exp="${ETP_ROOT}/run_r2r/iter_level1.yaml"
       if [[ "${MODEL_KEY}" == "cma" ]]; then
         extra_py=":${CMA_ROOT}"
-        exp="${CMA_ROOT}/experiment_level3/cma_level3.yaml"
+        exp="${CMA_ROOT}/vlnce_baselines/config/r2r_baselines/cma_pm_da_aug_tune.yaml"
         flags+=" --cma-root ${CMA_ROOT} --ckpt ${CMA_ROOT}/data/checkpoints/CMA_PM_DA_Aug.pth --exp-config ${exp}"
+        flags+=" --r2r-train ${CMA_ROOT}/data/datasets/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz --turn-angle 15"
       else
         extra_py=":${UNI_ROOT}"
         flags+=" --unilavira-root ${UNI_ROOT} --exp-config ${exp}"
@@ -234,9 +235,9 @@ run_query_role() {
       local extra_py="" exp="${ETP_ROOT}/run_r2r/iter_level1.yaml" ckpt="${ETP_DATA}/logs/checkpoints/release_r2r/ckpt.iter12000.pth"
       if [[ "${MODEL_KEY}" == "cma" ]]; then
         extra_py=":${CMA_ROOT}"
-        exp="${CMA_ROOT}/experiment_level3/cma_level3.yaml"
+        exp="${CMA_ROOT}/vlnce_baselines/config/r2r_baselines/cma_pm_da_aug_tune.yaml"
         ckpt="${CMA_ROOT}/data/checkpoints/CMA_PM_DA_Aug.pth"
-        flags+=" --cma-root ${CMA_ROOT} --r2r-train ${CMA_ROOT}/data/datasets/HM3D_VLNCE_v5/level3/level3_ep2.json.gz"
+        flags+=" --cma-root ${CMA_ROOT} --r2r-train ${CMA_ROOT}/data/datasets/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz"
       elif [[ "${MODEL_KEY}" == "unilavira" ]]; then
         extra_py=":${UNI_ROOT}"
         flags+=" --unilavira-root ${UNI_ROOT}"
