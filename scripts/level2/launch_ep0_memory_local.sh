@@ -33,15 +33,16 @@ if [[ -z "${ROLLOUT_ROOT:-}" ]]; then
   [[ "${fail}" -eq 0 ]] || { echo "[etpnav-l2-ep0] navigation failed" >&2; exit 1; }
   ROLLOUT_ROOT="${NATIVE_ROOT}"
 fi
-mkdir -p "${SCRIPT_DIR}/outputs" "${OUTPUT_ROOT}"
-ln -sfn "${OUTPUT_ROOT}" "${SCRIPT_DIR}/outputs/ep0_memory_from_poses_local_latest"
+LINK_DIR="${LLHN}/experiments_results/ETPNav/level2/links"
+mkdir -p "${LINK_DIR}" "${OUTPUT_ROOT}"
+ln -sfn "${OUTPUT_ROOT}" "${LINK_DIR}/ep0_memory_from_poses_local_latest"
 if [[ "${DRY_RUN}" == 1 ]]; then
   echo "[etpnav-l2-ep0] dry run builder from ${ROLLOUT_ROOT}"
   exit 0
 fi
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/../lib/conda_run.sh"
-memx_run 0 "${LLHN}" \
+memx_run "${M0_GPU:-0}" "${LLHN}" \
   python "${LLHN}/baselines/run.py" --mode build --level 2 --pipeline membridge \
   --ep0-rollouts "${ROLLOUT_ROOT}" \
   --dataset "${DATASET}" \

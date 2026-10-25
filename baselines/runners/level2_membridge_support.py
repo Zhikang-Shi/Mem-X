@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from frames import EpisodeStart, LocalFrame
+from frames import EpisodeStart, LocalFrame, rollout_world_poses
 from run_ep1_memory_janus import Actions, pose_from_env
 from se2 import (
     SE2,
@@ -178,9 +178,7 @@ def _map_frame(observations, pose, start: EpisodeStart, idx: int) -> LocalFrame:
     depth = np.asarray(observations["depth"], dtype=np.float32)
     if depth.ndim == 3:
         depth = depth[..., 0]
-    finite = depth[np.isfinite(depth)]
-    if finite.size and float(np.nanmax(finite)) <= 1.5:
-        depth = depth * 10.0
+    # The live Habitat environment has NORMALIZE_DEPTH=False.
     world = np.asarray(pose["position"], dtype=np.float64)
     world_yaw = yaw_from_xyzw(pose["rotation_xyzw"])
     x, y, z, yaw = world_agent_to_local(world, world_yaw, start.xyz, start.yaw)
@@ -254,7 +252,7 @@ def replay_ep0_map(env, episode, session_id: str, rollout_root: Path):
     """Replay the saved EP0 path and keep one RGB-D frame every 3 steps."""
     rollout = Path(rollout_root) / "sessions" / session_id / "stages" / "M0" / "rollout.json"
     payload = json.loads(rollout.read_text(encoding="utf-8"))
-    saved = payload.get("poses") or []
+    saved = rollout_world_poses(payload.get("poses") or [])
     if not saved:
         raise RuntimeError(f"{session_id}: empty EP0 rollout {rollout}")
     waypoints = np.asarray([item["position"] for item in saved], dtype=np.float64)

@@ -20,6 +20,16 @@ DEPTH_SCALE = 1000.0
 START_RADIUS_M = 0.20
 
 
+def rollout_world_poses(poses: list[dict]) -> list[dict]:
+    """Recover Habitat poses from exports that also carry episode-local xyz.
+
+    Local exports retain world rotation_xyzw and save the original xyz in
+    world_position. Rendering and replay must use that original xyz.
+    """
+    return [{**pose, "position": pose.get("world_position", pose["position"])}
+            for pose in poses]
+
+
 def camera_intrinsics(width: int = IMAGE_WIDTH, height: int = IMAGE_HEIGHT, hfov_deg: float = HFOV_DEG):
     fx = width / (2.0 * np.tan(np.deg2rad(hfov_deg) / 2.0))
     return float(fx), float(fx), width / 2.0, height / 2.0

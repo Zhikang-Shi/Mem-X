@@ -71,6 +71,9 @@ class ETPNavIntegrationTest(unittest.TestCase):
         self.assertGreater(len(tokens), 2)
         self.assertEqual(tokens[0], 101)
         self.assertEqual(tokens[-1], 102)
+        trainer = self.trainer_class.__new__(self.trainer_class)
+        trainer.config = cfg
+        self.assertEqual(trainer.collect_val_traj(), [episode_id])
 
     def test_shards_partition_dataset_and_resume_uses_public_session(self):
         partitions = []
