@@ -6,7 +6,7 @@
 # EP2 reads both memory stages, localizes, and updates the same structures. The step budget is 300. There is no extra exploration.
 # Each episode uses its own local frame. On a retrieval hit with a usable alignment, the scene graph walks in the aligned frame.
 # The type-2 suffix is given to the policy. A miss or a failed alignment gives the full instruction to the policy.
-# Janus uses GPU_PAIRS. The other models use GPU_IDS.
+# Janus uses GPU_PAIRS: FIRST,SECOND[,MEMORY]. The other models use GPU_IDS.
 
 set -euo pipefail
 
@@ -147,7 +147,7 @@ build_local_m0() {
     log "dry run skips the M0 builder"
     return
   fi
-  memx_spawn 0 "${LLHN}" "${output}/build.log" \
+  memx_spawn "${M0_GPU:-0}" "${LLHN}" "${output}/build.log" \
     python "${LLHN}/baselines/run.py" --mode build --level 2 --pipeline membridge \
     --ep0-rollouts "${rollouts}" \
     --dataset "${DATASET_EP0}" \
@@ -193,7 +193,7 @@ launch_discrete_ep0_shard() {
   flags+=" --max-steps ${MAX_STEPS} --num-shards ${#WORKERS[@]} --shard-index ${shard}"
   [[ -n "${SESSION_ID:-}" ]] && flags+=" --session-id ${SESSION_ID}"
   if [[ "${MODEL_KEY}" == "janus" ]]; then
-    [[ "${worker}" =~ ^[0-9]+,[0-9]+$ ]] || die "GPU pair must be FIRST,SECOND: ${worker}"
+    [[ "${worker}" =~ ^[0-9]+,[0-9]+(,[0-9]+)?$ ]] || die "Janus GPUs must be FIRST,SECOND[,MEMORY]: ${worker}"
     JANUSVLN_VGGT_DEVICE=cuda:0 JANUSVLN_LANGUAGE_DEVICE=cuda:1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
     PYTHONPATH="${JANUS_ROOT}/src:${MEMX}:${MEMX}/baselines/adapt${PYTHONPATH:+:${PYTHONPATH}}" \
     memx_run "${worker}" "${JANUS_ROOT}" \
@@ -212,11 +212,11 @@ launch_discrete_ep0_shard() {
     memx_run "${worker}" "${LLHN}" \
       python ${EP0_RUNNER} \
         --etpnav-root "${ETP_ROOT}" \
-        --exp-config "${CMA_ROOT}/experiment_level3/cma_level3.yaml" \
+        --exp-config "${CMA_ROOT}/vlnce_baselines/config/r2r_baselines/cma_pm_da_aug_tune.yaml" \
         --task-config "${ETP_ROOT}/run_r2r/hm3d_level3.yaml" \
         --cma-root "${CMA_ROOT}" \
         --ckpt "${CMA_ROOT}/data/checkpoints/CMA_PM_DA_Aug.pth" \
-        --r2r-train "${CMA_ROOT}/data/datasets/HM3D_VLNCE_v5/level3/level3_ep2.json.gz" \
+        --r2r-train "${CMA_ROOT}/data/datasets/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz" \
         --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" --sim-gpu-id 0 \
         ${flags}
   else
@@ -238,6 +238,9 @@ run_ep0() {
     log "EP0: ETPNav navigation, then async local M0"
     DRY_RUN="${DRY_RUN}" GPU_IDS="${GPU_IDS}" RUN_TAG="${RUN_TAG}" RUN_ROOT="${RUN_ROOT}" \
       bash "${EP0_ETP}"
+    if [[ "${DRY_RUN}" != 1 ]]; then
+      ln -sfn "${RUN_ROOT}/ep0_m0" "${LINK_DIR}/ep0_memory_from_poses_local_latest"
+    fi
     return
   fi
   run_discrete_ep0
@@ -269,14 +272,14 @@ run_membridge_role() {
     [[ "${dry}" == 1 ]] && flags+=" --dry-run"
     [[ -n "${SESSION_ID:-}" ]] && flags+=" --session-id ${SESSION_ID}"
     if [[ "${MODEL_KEY}" == "cma" ]]; then
-      flags+=" --cma-root ${MEMX}/baselines/models/CMA --r2r-train ${MEMX}/baselines/models/CMA/data/datasets/HM3D_VLNCE_v5/level3/level3_ep2.json.gz"
+      flags+=" --cma-root ${CMA_ROOT} --r2r-train ${CMA_ROOT}/data/datasets/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz"
     elif [[ "${MODEL_KEY}" == "unilavira" ]]; then
-      flags+=" --unilavira-root ${MEMX}/baselines/models/Uni-LaViRA"
+      flags+=" --unilavira-root ${UNI_ROOT}"
     fi
     local exp_config="${ETP_ROOT}/run_r2r/iter_level2.yaml"
     local ckpt="${ETP_DATA}/logs/checkpoints/release_r2r/ckpt.iter12000.pth"
     if [[ "${MODEL_KEY}" == "cma" ]]; then
-      exp_config="${CMA_ROOT}/experiment_level3/cma_level3.yaml"
+      exp_config="${CMA_ROOT}/vlnce_baselines/config/r2r_baselines/cma_pm_da_aug_tune.yaml"
       ckpt="${CMA_ROOT}/data/checkpoints/CMA_PM_DA_Aug.pth"
     fi
     local lightglue_py=""
@@ -284,7 +287,7 @@ run_membridge_role() {
       lightglue_py=":${LIGHTGLUE_ROOT}"
     fi
     if [[ "${MODEL_KEY}" == "janus" ]]; then
-      [[ "${worker}" =~ ^[0-9]+,[0-9]+$ ]] || die "GPU pair must be FIRST,SECOND: ${worker}"
+      [[ "${worker}" =~ ^[0-9]+,[0-9]+(,[0-9]+)?$ ]] || die "Janus GPUs must be FIRST,SECOND[,MEMORY]: ${worker}"
       MEMX_ENV_FILE="${VLM_ENV_FILE}" \
       JANUSVLN_VGGT_DEVICE=cuda:0 JANUSVLN_LANGUAGE_DEVICE=cuda:1 \
       HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false \

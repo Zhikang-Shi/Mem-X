@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from frames import camera_intrinsics
-from se2 import SE2, wrap_angle
+from se2 import SE2, se2_error, wrap_angle
 
 LIGHTGLUE_ROOT = Path(os.environ.get("LIGHTGLUE_ROOT", ""))
 PYDEPS = Path(os.environ.get("PYDEPS", ""))
@@ -25,6 +25,8 @@ TOP_K = 5
 MIN_INLIERS = 80
 SECOND_MIN = 20
 SECOND_RATIO = 1.5
+SAME_POSE_MAX_M = 0.25
+SAME_POSE_MAX_RAD = math.radians(10.0)
 INLIER_THRESH_M = 0.10
 REFINE_MAX_M = 1.00
 REFINE_MAX_DEG = 20.0
@@ -73,7 +75,9 @@ def models():
     from lightglue.lightglue import LightGlue
     from lightglue.superpoint import SuperPoint
 
-    _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    _DEVICE = torch.device(os.environ.get(
+        "MEMBRIDGE_LOCALIZATION_DEVICE", "cuda" if torch.cuda.is_available() else "cpu"
+    ))
     _SP = SuperPoint(max_num_keypoints=MAX_KPTS).eval().to(_DEVICE)
     _LG = LightGlue(features="superpoint").eval().to(_DEVICE)
     return _SP, _LG
@@ -169,7 +173,9 @@ def _se2_from_two(src: np.ndarray, dst: np.ndarray) -> SE2 | None:
     n_dst = math.hypot(float(d_dst[0]), float(d_dst[1]))
     if n_src < 0.05 or n_dst < 0.05:
         return None
-    yaw = wrap_angle(math.atan2(d_dst[1], d_dst[0]) - math.atan2(d_src[1], d_src[0]))
+    # Habitat yaw rotates XZ with [[cos, sin], [-sin, cos]], so the
+    # polar-angle change has the opposite sign to yaw.
+    yaw = wrap_angle(math.atan2(d_src[1], d_src[0]) - math.atan2(d_dst[1], d_dst[0]))
     cosine, sine = math.cos(yaw), math.sin(yaw)
     rx = cosine * src[0, 0] + sine * src[0, 1]
     rz = -sine * src[0, 0] + cosine * src[0, 1]
@@ -266,13 +272,28 @@ def score_candidate(query_frame, map_frame, feat_q: dict, feat_m: dict) -> GeomC
     return GeomCandidate(int(pairs.shape[0]), int(both.sum()), int(nin), float(ratio), transform)
 
 
+def _competing_candidate(best: GeomCandidate, ranked: list[GeomCandidate]):
+    """Multiple map views supporting one pose are agreement, not aliases."""
+    if best.transform is None:
+        return None
+    for candidate in ranked:
+        if candidate is best or candidate.transform is None:
+            continue
+        distance, angle = se2_error(candidate.transform, best.transform)
+        if distance <= SAME_POSE_MAX_M and angle <= SAME_POSE_MAX_RAD:
+            continue
+        return candidate
+    return None
+
+
 def decide_geom_lock(cands: list[GeomCandidate]) -> tuple[bool, str, GeomCandidate]:
     if not cands:
         empty = GeomCandidate(0, 0, 0, 0.0, None)
         return False, "no candidates", empty
     ranked = sorted(cands, key=lambda c: c.n_inlier, reverse=True)
     best = ranked[0]
-    second_n = ranked[1].n_inlier if len(ranked) > 1 else 0
+    competitor = _competing_candidate(best, ranked)
+    second_n = competitor.n_inlier if competitor is not None else 0
     if best.transform is None or best.n_inlier < MIN_INLIERS:
         return False, f"inliers {best.n_inlier} < {MIN_INLIERS}", best
     if second_n >= SECOND_MIN and best.n_inlier < SECOND_RATIO * max(second_n, 1):
@@ -289,6 +310,10 @@ def _yaw_alias_gap(map_frames, query_window, seed: SE2) -> tuple[bool, float, fl
     occupancy = build_map_occupancy(map_frames)
     query_occ = build_query_occupancy(list(query_window))
     pts = query_occ.occupied_points()
+    # Empty occupancy carries no evidence for or against a yaw alias. Keep
+    # the already gated geometric estimate instead of comparing sentinel scores.
+    if pts.shape[0] == 0 or not np.any(occupancy.occupied):
+        return True, 0.0, 0.0
     s0 = float(_score_transform(seed, pts, occupancy))
     alias = []
     for turn in (0.5, 1.0, 1.5):
@@ -363,7 +388,7 @@ def try_lock_frame(
             best.refined = False
         return ok, reason, best
     ranked = sorted(cands, key=lambda c: c.n_inlier, reverse=True)
-    second = ranked[1] if len(ranked) > 1 else None
+    second = _competing_candidate(best, ranked)
     if (
         best.n_inlier >= MIN_INLIERS
         and second is not None

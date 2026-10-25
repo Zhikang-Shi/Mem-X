@@ -22,6 +22,10 @@ source "${SCRIPT_LIB}/conda_run.sh"
 ETP_ROOT="$(memx_prepare_etpnav "${LLHN}" "${ETP_ROOT}" "${MEMORY_ROOT}")"
 export PYTHONPATH="${ETP_ROOT}/third_party/CLIP:${ETP_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 MAGNUM_LOG=quiet GLOG_minloglevel=2
+selection=()
+if [[ -n "${SESSION_ID:-}" ]]; then
+  selection+=(TASK_CONFIG.DATASET.EPISODES_ALLOWED "['${SESSION_ID}_ep0']")
+fi
 memx_run "${GPU}" "${ETP_ROOT}" \
   python run.py \
     --exp_name "l2_ep0_s${SHARD_ID}" --run-type eval \
@@ -34,4 +38,4 @@ memx_run "${GPU}" "${ETP_ROOT}" \
     EVAL.DUMP_MEMORY True EVAL.LOAD_GRAPHMAP False \
     EVAL.MEMORY_ROOT "${MEMORY_ROOT}" EVAL.MEMORY_STAGE M0 \
     EVAL.SHARD_ID "${SHARD_ID}" EVAL.NUM_SHARDS "${NUM_SHARDS}" \
-    IL.back_algo control IL.is_requeue False
+    IL.back_algo control IL.is_requeue False "${selection[@]}"

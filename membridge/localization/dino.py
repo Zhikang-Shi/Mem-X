@@ -24,7 +24,9 @@ def available() -> bool:
 def _device():
     import torch
 
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(os.environ.get(
+        "MEMBRIDGE_LOCALIZATION_DEVICE", "cuda" if torch.cuda.is_available() else "cpu"
+    ))
 
 
 def load_model():

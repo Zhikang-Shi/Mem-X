@@ -5,12 +5,16 @@
  import json
  import jsonlines
  import os
-@@ -767,7 +768,52 @@
+@@ -767,7 +768,56 @@
  
          trajectories = gt_data
          self.trajectories = gt_data
 -        trajectories = list(trajectories.keys())[self.config.local_rank::self.config.GPU_NUMBERS]
 +        trajectories = list(trajectories.keys())
++        allowed = self.config.TASK_CONFIG.DATASET.EPISODES_ALLOWED
++        if allowed is not None:
++            allowed = set(map(str, allowed))
++            trajectories = [ep_id for ep_id in trajectories if str(ep_id) in allowed]
 +        num_shards = int(getattr(self.config.EVAL, "NUM_SHARDS", 1) or 1)
 +        shard_id = int(getattr(self.config.EVAL, "SHARD_ID", 0) or 0)
 +        if num_shards < 1 or not 0 <= shard_id < num_shards:

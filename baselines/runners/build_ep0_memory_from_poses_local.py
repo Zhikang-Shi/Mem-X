@@ -54,6 +54,7 @@ if loc not in sys.path:
     sys.path.insert(0, loc)
 
 from se2 import world_agent_to_local, yaw_from_xyzw  # noqa: E402
+from frames import rollout_world_poses  # noqa: E402
 
 DEFAULT_EP0 = Path(
     "/share/shared/shizk/level3_outputs/etpnav_nograph_local/ep0_20260912-l3-nograph"
@@ -172,7 +173,9 @@ def _row_from_native(path: Path) -> dict[str, Any]:
             for index, (position, rotation) in enumerate(zip(positions, rotations))
         ]
     payload = dict(payload)
-    payload["poses"] = poses
+    # validate_role_row normalizes pose dictionaries and drops world_position.
+    # Restore world xyz before passing through that normalization.
+    payload["poses"] = rollout_world_poses(poses)
     payload["steps"] = max(len(poses) - 1, 0)
     payload["role"] = "ep0"
     payload["phase"] = "level3_ep0"
@@ -361,6 +364,7 @@ def main() -> int:
     failures: list[dict[str, Any]] = []
     try:
         for index, task in enumerate(selected, 1):
+            task["ep0"]["poses"] = rollout_world_poses(task["ep0"]["poses"])
             start = task["ep0"]["poses"][0]
             origin_xyz = start["position"]
             origin_yaw = yaw_from_xyzw(start["rotation_xyzw"])

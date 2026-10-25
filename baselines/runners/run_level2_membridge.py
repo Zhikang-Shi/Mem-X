@@ -90,9 +90,7 @@ def live_frame(observations, pose, start: EpisodeStart, idx: int):
     depth = np.asarray(observations["depth"], dtype=np.float32)
     if depth.ndim == 3:
         depth = depth[..., 0]
-    finite = depth[np.isfinite(depth)]
-    if finite.size and float(np.nanmax(finite)) <= 1.5:
-        depth = depth * 10.0
+    # Both Habitat adapters return metric depth, even in close-range frames.
     world = np.asarray(pose["position"], dtype=np.float64)
     wyaw = float(yaw_from_xyzw(pose["rotation_xyzw"]))
     x, y, z, yaw = world_agent_to_local(world, wyaw, start.xyz, start.yaw)
@@ -176,7 +174,7 @@ def enable_live_semantic_update() -> None:
             "INHERIT_SG_DINOV3_MODEL": os.environ.get("MODELS_DIR", "") + "/facebook/dinov3",
             "INHERIT_SG_DINOV3_REPO": os.environ.get("MODELS_DIR", "") + "/source/dinov3",
             "INHERIT_SG_TEXT_ENCODER": os.environ.get("MODELS_DIR", "") + "/all-MiniLM-L6-v2",
-            "INHERIT_SG_SAM3_CATEGORY_BATCH_SIZE": "15",
+            "INHERIT_SG_SAM3_CATEGORY_BATCH_SIZE": os.environ.get("INHERIT_SG_SAM3_CATEGORY_BATCH_SIZE", "15"),
             "INHERIT_SG_KEYFRAME_FILTER": "1",
         }
     )
@@ -433,6 +431,9 @@ def run_one(env, habitat_config, policy, episode, args) -> None:
                     break
             if locked:
                 break
+            # A failed ambiguity spin already tested this position. Wait for
+            # another meter of motion before attempting another full spin.
+            last_try = (frame.x, frame.z)
             continue
         if moved:
             last_try = (frame.x, frame.z)

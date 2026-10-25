@@ -8,7 +8,7 @@
     },
     "vlnce_baselines/common/base_il_trainer.py": {
       "upstream_sha256": "139dd27b0563aab3fb8ac1a875e08f93d02186cfc32a94e93875f6c8ad22ca76",
-      "adapted_sha256": "d40e9a3df461c1f4f82eea0c0f2c5d7eea9042ab113154d9c2b64ece9f17cf8b",
+      "adapted_sha256": "c97b67594b7c91ee6e68e8087efefc8bd0a241da1a4aecaada7eb208f2444b87",
       "patch": "02-base_il_trainer.patch",
       "recovered_sha256": "1623db658c9f2f039194cea9efe766c38dc2592ab2b613f29e6a004cb6642e21",
       "upgrade_patch": "02-base_il_trainer-upgrade.patch"
