@@ -101,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", default="")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--sim-gpu-id", type=int, default=0)
-    parser.add_argument("--max-steps", type=int, default=400)
+    parser.add_argument("--max-steps", type=int, default=300)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--session-id", action="append", default=[])
     parser.add_argument("--episode-id", action="append", default=[])
@@ -141,6 +141,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--janus-root", type=Path, default=Path("/janus/src/JanusVLN"))
     parser.add_argument("--janus-model", type=Path, default=Path("/janus/models/JanusVLN_Extra"))
     parser.add_argument("--num-history", type=int, default=8)
+    parser.add_argument("--unilavira-root", type=Path, default=HERE / "models/Uni-LaViRA")
     args = parser.parse_args()
     args.split = "ep1"
     if args.num_shards < 1 or not 0 <= args.shard_index < args.num_shards:
@@ -209,14 +210,20 @@ def load_ep0_start(m0: Path, session_id: str) -> EpisodeStart:
 def load_tasks(args: argparse.Namespace) -> list[dict[str, Any]]:
     payload = read_any_json(args.dataset)
     rows: list[dict[str, Any]] = []
+    requested_sessions = set(map(str, args.session_id))
+    requested_episodes = set(map(str, args.episode_id))
     for episode in payload.get("episodes") or []:
         info = episode.get("info") or {}
-        if str(info.get("lifelong_role") or info.get("level3_role") or "") != "ep1":
+        if str(info.get("role") or info.get("lifelong_role") or info.get("level3_role") or "") != "ep1":
             continue
-        episode_id = str(getattr(episode, "episode_id", "") or "")
+        episode_id = str(episode.get("episode_id") or "")
         session_id = episode_id.rsplit("_", 1)[0] if episode_id.endswith(("_ep0", "_ep1", "_ep2", "_ep3", "_ep4")) else str(info.get("session_id") or "")
         if not session_id:
             raise RuntimeError(f"EP1 episode {episode.get('episode_id')} has no level3 task id")
+        if requested_sessions and session_id not in requested_sessions:
+            continue
+        if requested_episodes and episode_id not in requested_episodes:
+            continue
         instruction = instruction_text(episode)
         m0 = args.m0_root / "sessions" / session_id / "stages/M0"
         missing = [name for name in CORE_M0_FILES if not (m0 / name).is_file()]
@@ -241,8 +248,6 @@ def load_tasks(args: argparse.Namespace) -> list[dict[str, Any]]:
     if args.expected_count and not args.session_id and not args.episode_id:
         if len(rows) != args.expected_count:
             raise RuntimeError(f"Expected {args.expected_count} EP1 tasks, found {len(rows)}")
-    requested_sessions = set(map(str, args.session_id))
-    requested_episodes = set(map(str, args.episode_id))
     selected = [
         row
         for row in rows
@@ -268,9 +273,7 @@ def _depth_m(path: Path) -> np.ndarray:
         depth = depth[..., 0]
     if raw.dtype == np.uint16:
         return depth / 1000.0
-    finite = depth[np.isfinite(depth)]
-    if finite.size and float(np.nanmax(finite)) <= 1.5:
-        return depth * 10.0
+    # Floating point exports already contain metres; uint16 exports use mm.
     return depth
 
 
@@ -326,9 +329,7 @@ def copy_rgbd(observations) -> tuple[np.ndarray, np.ndarray]:
 
 def live_frame(observations, pose, start: EpisodeStart, idx: int) -> LocalFrame:
     rgb, depth = copy_rgbd(observations)
-    finite = depth[np.isfinite(depth)]
-    if finite.size and float(np.nanmax(finite)) <= 1.5:
-        depth = depth * 10.0
+    # The Habitat environment sets NORMALIZE_DEPTH=False.
     wxyz = np.asarray(pose["position"], dtype=np.float64)
     wyaw = yaw_from_xyzw(pose["rotation_xyzw"])
     x, y, z, yaw = world_agent_to_local(wxyz, wyaw, start.xyz, start.yaw)

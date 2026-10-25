@@ -11,7 +11,7 @@
 # The two type-1 targets are walked on the scene graph. The type-2 suffix is given to the policy.
 # A rejected top-3 selection does not skip exploration.
 # EP2_UPDATE_MEMORY=full is the default. It updates the scene graph, the navigation graph, and the trajectory.
-# Janus uses GPU_PAIRS. The other models use GPU_IDS.
+# Janus uses GPU_PAIRS: FIRST,SECOND[,MEMORY]. The other models use GPU_IDS.
 
 set -euo pipefail
 
@@ -61,6 +61,10 @@ esac
 
 RUNNER="${LLHN}/baselines/run.py"
 ETP_ROOT="${ETPNAV_ROOT:-${LLHN}/baselines/models/ETPNav}"
+JANUS_ROOT="${JANUS_ROOT:-${LLHN}/baselines/models/JanusVLN}"
+JANUS_MODEL="${JANUS_MODEL:-${MODELS_DIR:-${LLHN}/models}/JanusVLN_Extra}"
+CMA_ROOT="${CMA_ROOT:-${LLHN}/baselines/models/CMA}"
+UNI_ROOT="${UNI_ROOT:-${UNILAVIRA_ROOT:-${LLHN}/baselines/models/Uni-LaViRA}}"
 L3_HABITAT="${LLHN}/datasets/level3/habitat"
 
 GPU_IDS="${GPU_IDS:-0 1 2 3 4 5 6 7}"
@@ -69,10 +73,10 @@ STAGE="${STAGE:-all}"
 DRY_RUN="${DRY_RUN:-0}"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d_%H%M%S)}"
 RUN_ROOT="${RUN_ROOT:-${LLHN}/experiments_results/${RESULT_NAME}/level3/runs/${RUN_TAG}}"
-if [[ "${MODEL_KEY}" != "janus" ]]; then
-  ETP_ROOT="$(memx_prepare_etpnav "${LLHN}" "${ETP_ROOT}" "${RUN_ROOT}")"
-fi
+ETP_ROOT="$(memx_prepare_etpnav "${LLHN}" "${ETP_ROOT}" "${RUN_ROOT}")"
 ETP_DATA="$(readlink -f -- "${ETP_ROOT}/data")"
+M0_ROOT="${M0_ROOT:-${RUN_ROOT}/ep0_m0}"
+M1_ROOT="${M1_ROOT:-${RUN_ROOT}/ep1}"
 EP2_UPDATE_MEMORY="${EP2_UPDATE_MEMORY:-full}"
 export MODEL MODEL_KEY RUN_TAG RUN_ROOT EP2_UPDATE_MEMORY
 
@@ -83,22 +87,17 @@ python3 "${LLHN}/scripts/materialize_habitat_splits.py" --root "${LLHN}" --level
 [[ "${DRY_RUN}" == 0 || "${DRY_RUN}" == 1 ]] || die "DRY_RUN must be 0 or 1"
 [[ -f "${RUNNER}" ]] || die "missing ${RUNNER}"
 
-latest_output() {
-  local link="$1"
-  [[ -L "${link}" || -d "${link}" ]] || die "missing output link: ${link}"
-  readlink -f -- "${link}"
-}
-
 run_etpnav_ep0() {
   local output="${RUN_ROOT}/ep0"
-  local m0="${RUN_ROOT}/ep0_m0"
   log "EP0: ETPNav navigation, then local M0, output=${output}"
   if [[ "${DRY_RUN}" == 1 ]]; then
     log "dry run skips ETPNav EP0"
     return
   fi
-  mkdir -p "${output}/logs" "${m0}"
+  mkdir -p "${output}/logs"
   local -a pids=()
+  local -a selection=()
+  [[ -n "${SESSION_ID:-}" ]] && selection+=(TASK_CONFIG.DATASET.EPISODES_ALLOWED "['${SESSION_ID}_ep0']")
   local shard=0 gpu fail=0
   read -r -a WORKERS <<< "${GPU_IDS}"
   for gpu in "${WORKERS[@]}"; do
@@ -115,13 +114,23 @@ run_etpnav_ep0() {
         EVAL.DUMP_MEMORY True EVAL.LOAD_GRAPHMAP False \
         EVAL.MEMORY_ROOT "${output}" EVAL.MEMORY_STAGE M0 \
         EVAL.SHARD_ID "${shard}" EVAL.NUM_SHARDS "${#WORKERS[@]}" \
-        IL.back_algo control IL.is_requeue False
+        IL.back_algo control IL.is_requeue False "${selection[@]}"
     pids+=("$!")
     shard=$((shard + 1))
   done
   for pid in "${pids[@]}"; do wait "${pid}" || fail=1; done
   [[ "${fail}" -eq 0 ]] || die "ETPNav EP0 failed"
-  memx_spawn 0 "${LLHN}" "${m0}/build.log" \
+}
+
+build_local_m0() {
+  local output="${RUN_ROOT}/ep0" m0="${M0_ROOT}"
+  mkdir -p "${m0}"
+  local -a extra=()
+  [[ -n "${SESSION_ID:-}" ]] && extra+=(--session-id "${SESSION_ID}")
+  # M0 sees one GPU, independently of Janus' online cuda:2 overrides.
+  INHERIT_SG_SAM3_DEVICE=cuda:0 INHERIT_SG_DINOV3_DEVICE=cuda:0 \
+  INHERIT_SG_TEXT_ENCODER_DEVICE=cuda:0 \
+  memx_spawn "${M0_GPU:-0}" "${LLHN}" "${m0}/build.log" \
     python "${RUNNER}" --mode build --level 3 --pipeline membridge \
       --ep0-rollouts "${output}" \
       --dataset "${L3_HABITAT}/level3_ep0.json.gz" \
@@ -131,7 +140,7 @@ run_etpnav_ep0() {
       --query-vocabulary "${LLHN}/membridge/semantic_scene_graph/config/level1_runtime_query_vocabulary_75.json" \
       --coordinate-frame ep0_local \
       --expected-count "${EXPECTED_COUNT:-157}" \
-      --skip-existing --continue-on-error >/dev/null
+      --skip-existing "${extra[@]}" >/dev/null
   wait "$!" || die "M0 build failed"
   log "M0 ${m0}"
 }
@@ -152,6 +161,8 @@ run_role() {
     unilavira) [[ -n "${UNI_ROOT:-}" && -d "${UNI_ROOT}" ]] || die "Set UNI_ROOT or UNILAVIRA_ROOT" ;;
   esac
   local -a pids=()
+  local max_steps="${MAX_STEPS_BASIC:-300}"
+  [[ "${role}" == "ep2" ]] && max_steps="${MAX_STEPS_MEMORY:-400}"
   local shard=0 worker fail=0
   if [[ "${MODEL_KEY}" == "janus" ]]; then
     read -r -a WORKERS <<< "${GPU_PAIRS}"
@@ -159,8 +170,10 @@ run_role() {
     read -r -a WORKERS <<< "${GPU_IDS}"
   fi
   for worker in "${WORKERS[@]}"; do
-    local py_path="${ETP_ROOT}:${LLHN}:${LLHN}/baselines/adapt:${LLHN}/membridge/localization:${LLHN}/membridge/runners"
+    local py_path="${ETP_ROOT}/third_party/CLIP:${ETP_ROOT}:${LLHN}:${LLHN}/baselines/adapt:${LLHN}/membridge/localization:${LLHN}/membridge/runners"
+    [[ -n "${LIGHTGLUE_ROOT:-}" ]] && py_path="${LIGHTGLUE_ROOT}:${py_path}"
     if [[ "${MODEL_KEY}" == "janus" ]]; then
+      [[ "${worker}" =~ ^[0-9]+,[0-9]+(,[0-9]+)?$ ]] || die "Janus GPUs must be FIRST,SECOND[,MEMORY]: ${worker}"
       py_path="${JANUS_ROOT}/src:${py_path}"
     fi
     if [[ "${MODEL_KEY}" == "janus" ]]; then
@@ -168,12 +181,26 @@ run_role() {
       export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
     fi
     local -a extra=()
+    local exp_config="${ETP_ROOT}/run_r2r/iter_level3.yaml"
+    local ckpt="${ETP_DATA}/logs/checkpoints/release_r2r/ckpt.iter12000.pth"
+    case "${MODEL_KEY}" in
+      cma)
+        exp_config="${CMA_ROOT}/vlnce_baselines/config/r2r_baselines/cma_pm_da_aug_tune.yaml"
+        ckpt="${CMA_ROOT}/data/checkpoints/CMA_PM_DA_Aug.pth"
+        extra+=(--cma-root "${CMA_ROOT}" --r2r-train "${CMA_ROOT}/data/datasets/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz")
+        ;;
+      janus) extra+=(--janus-root "${JANUS_ROOT}" --janus-model "${JANUS_MODEL}") ;;
+      unilavira) extra+=(--unilavira-root "${UNI_ROOT}") ;;
+    esac
+    extra+=(--max-steps "${max_steps}")
     [[ -n "${SESSION_ID:-}" ]] && extra+=(--session-id "${SESSION_ID}")
     if [[ "${role}" != "ep0" && -n "${LIMIT:-}" ]]; then
       extra+=(--limit "${LIMIT}")
     fi
-    [[ -n "${M0_ROOT:-}" ]] && extra+=(--m0-root "${M0_ROOT}")
-    if [[ "${role}" == "ep2" && -n "${M1_ROOT:-}" ]]; then
+    if [[ "${role}" != "ep0" ]]; then
+      extra+=(--m0-root "${M0_ROOT}")
+    fi
+    if [[ "${role}" == "ep2" ]]; then
       extra+=(--m1-root "${M1_ROOT}")
     fi
     if [[ "${role}" == "ep2" ]]; then
@@ -192,9 +219,9 @@ run_role() {
         --mode auto --level 3 --pipeline membridge --role "${role}" --nav-model "${MODEL_KEY}" \
         --dataset "${dataset}" --output-root "${output}" \
         --etpnav-root "${ETP_ROOT}" \
-        --exp-config "${ETP_ROOT}/run_r2r/iter_level3.yaml" \
+        --exp-config "${exp_config}" \
         --task-config "${ETP_ROOT}/run_r2r/hm3d_level3.yaml" \
-        --ckpt "${ETP_DATA}/logs/checkpoints/release_r2r/ckpt.iter12000.pth" \
+        --ckpt "${ckpt}" \
         --waypoint-ckpt "${ETP_DATA}/wp_pred/check_cwp_bestdist_hfov90" \
         --scenes-dir "${SCENES_DIR:?Set SCENES_DIR}" \
         --num-shards "${#WORKERS[@]}" --shard-index "${shard}" \
@@ -212,6 +239,7 @@ run_ep0() {
   else
     run_role ep0
   fi
+  [[ "${DRY_RUN}" == 1 ]] || build_local_m0
 }
 run_ep1() { run_role ep1; }
 run_ep2() { run_role ep2; }

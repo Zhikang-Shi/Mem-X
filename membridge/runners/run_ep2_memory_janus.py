@@ -220,9 +220,9 @@ def dataset_tasks(dataset_path: Path) -> dict[str, dict[str, Any]]:
     tasks: dict[str, dict[str, Any]] = {}
     for episode in payload.get("episodes") or []:
         info = episode.get("info") or {}
-        if str(info.get("lifelong_role") or info.get("level3_role")) != "ep2":
+        if str(info.get("role") or info.get("lifelong_role") or info.get("level3_role")) != "ep2":
             continue
-        episode_id = str(getattr(episode, "episode_id", "") or "")
+        episode_id = str(episode.get("episode_id") or "")
         task_id = episode_id.rsplit("_", 1)[0] if episode_id.endswith(("_ep0", "_ep1", "_ep2", "_ep3", "_ep4")) else str(info.get("session_id") or "")
         if not task_id or task_id in tasks:
             raise RuntimeError(f"invalid Level-3 EP2 task: {task_id!r}")
@@ -452,7 +452,8 @@ def prepare_dual_anchor_plan(adapter: Any, route: Mapping[str, Any], recall_poli
 
 
 def publish_m2(
-    m1: Path, run_dir: Path, destination: Path, metadata: Mapping[str, Any]
+    m1: Path, run_dir: Path, destination: Path, metadata: Mapping[str, Any],
+    *, update_memory: str = "nav",
 ) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.parent / f".M2.tmp-{os.getpid()}-{uuid.uuid4().hex[:8]}"
@@ -460,6 +461,24 @@ def publish_m2(
         raise FileExistsError(f"refusing to replace M2: {destination}")
     parent_manifest = m1 / "stage_manifest.json"
     shutil.copytree(m1, temporary)
+    if update_memory == "full":
+        for name in ("memory_kb.json", "builder_state.pkl"):
+            if not (run_dir / name).is_file():
+                raise RuntimeError(f"full EP2 did not produce {run_dir / name}")
+        for name in (
+            "memory_kb.json", "builder_state.pkl", "spatial_graph.pkl", "map_data.pkl",
+            "nodes.jsonl", "relations.csv", "config_snapshot.yaml",
+        ):
+            source = run_dir / name
+            if source.is_file():
+                shutil.copy2(source, temporary / name)
+        for name in ("frames", "objects"):
+            source = run_dir / name
+            if source.is_dir():
+                target = temporary / name
+                # Live continuation may only persist newly observed frames.
+                # Keep inherited observations referenced by the parent SG.
+                shutil.copytree(source, target, dirs_exist_ok=True)
     for name in ("world_metric_map.npz", "trajectory_graph.npz"):
         source = run_dir / name
         if not source.is_file():
@@ -489,7 +508,11 @@ def publish_m2(
         "parent_stage_manifest_sha256": (
             common.sha256_file(parent_manifest) if parent_manifest.is_file() else None
         ),
-        "semantic_sg_policy": "frozen_m1_no_sam3_no_dinov3",
+        "semantic_sg_policy": (
+            "live_sam3_dinov3_continuation" if update_memory == "full"
+            else "frozen_m1_no_sam3_no_dinov3"
+        ),
+        "memory_update": update_memory,
         "navigation_memory_policy": "live_rgbd_world_map_and_trajectory_update",
         "instruction_parse_source": "live_vlm",
         "vlm_top3_source": "live_api",

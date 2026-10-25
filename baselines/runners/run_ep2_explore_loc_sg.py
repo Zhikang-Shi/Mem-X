@@ -625,7 +625,7 @@ def episodes_for_nav(env, nav_model: str) -> dict[str, Any]:
     selected = {}
     for episode in env.episodes:
         info = dict(getattr(episode, "info", {}) or {})
-        if str(info.get("lifelong_role") or info.get("level3_role")) != "ep2":
+        if str(info.get("role") or info.get("lifelong_role") or info.get("level3_role")) != "ep2":
             continue
         episode_id = str(getattr(episode, "episode_id", "") or "")
         task_id = episode_id.rsplit("_", 1)[0] if episode_id.endswith(("_ep0", "_ep1", "_ep2", "_ep3", "_ep4")) else str(info.get("session_id") or "")
@@ -725,7 +725,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lavira-parse-root", type=Path, action="append", default=[])
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--session-id", action="append", default=[])
-    parser.add_argument("--session-id-file", type=Path, default=DEFAULT_SESSION_FILE)
+    parser.add_argument("--session-id-file", type=Path)
     parser.add_argument("--episode-id", action="append", default=[])
     parser.add_argument("--path-map", action="append", default=[])
     parser.add_argument("--run-id", default="")
@@ -741,7 +741,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--expected-count", type=int, default=133)
+    parser.add_argument("--expected-count", type=int, default=157)
     parser.add_argument(
         "--query-vocabulary",
         type=Path,
@@ -783,6 +783,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("/janus/models/JanusVLN_Extra"),
     )
     parser.add_argument("--num-history", type=int, default=8)
+    parser.add_argument("--unilavira-root", type=Path, default=HERE / "models/Uni-LaViRA")
     parser.add_argument("--ep1-lock-file", type=Path)
     parser.add_argument(
         "--update-memory",
@@ -843,14 +844,16 @@ def load_tasks(args: argparse.Namespace) -> list[dict[str, Any]]:
     requested = set(read_session_ids(args))
     requested_episodes = set(map(str, args.episode_id))
     if not requested and not requested_episodes:
-        raise RuntimeError("EP2 explore-loc needs --session-id or --session-id-file")
+        if args.session_id_file:
+            raise RuntimeError(f"No EP2 sessions found in {args.session_id_file}")
+        requested = set(tasks)
     unknown = requested - set(tasks)
     if unknown:
         raise RuntimeError(f"unknown EP2 sessions: {sorted(unknown)[:8]}")
     if args.expected_count and not args.session_id and not args.episode_id:
         if len(requested) != args.expected_count:
             raise RuntimeError(
-                f"Expected {args.expected_count} lock-correct sessions, found {len(requested)}"
+                f"Expected {args.expected_count} EP2 sessions, found {len(requested)}"
             )
     rows = []
     missing = []
@@ -1812,6 +1815,7 @@ def run_one(*, env, habitat_config, episode, row, gridmm, args) -> dict[str, Any
                     "route": route,
                     "sg_handoff": result["sg_handoff"],
                 },
+                update_memory=args.update_memory,
             )
             gm = run_dir / "graphmap.pt"
             if gm.is_file():
@@ -1889,6 +1893,8 @@ def main() -> int:
     completed = {str(row["episode_id"]) for row in read_jsonl(raw_log)}
 
     if args.nav_model == "janus":
+        args.janus_dataset = args.dataset
+        args.dataset_split = "ep2"
         env, habitat_config = make_janus_env(args)
     else:
         env, habitat_config = make_env(args, split="ep2")
