@@ -7,14 +7,12 @@
 **A Memory-Dependent Cross-Episode Benchmark for Vision-and-Language Navigation**
 
 <p align="center">
-  <img alt="Paper: coming soon" src="https://img.shields.io/badge/Paper-Coming%20Soon-b31b1b">
+  <a href="https://arxiv.org/abs/2611.27166"><img alt="Mem-X paper on arXiv" src="https://img.shields.io/badge/arXiv-2611.27166-b31b1b"></a>
   <a href="https://github.com/Zhikang-Shi/Mem-X"><img alt="Code" src="https://img.shields.io/badge/Code-GitHub-181717?logo=github"></a>
   <a href="https://huggingface.co/datasets/KangThomas/Mem-X/tree/main"><img alt="Dataset" src="https://img.shields.io/badge/Dataset-Hugging%20Face-FFD21E"></a>
   <a href="assets/Mem-X_teaser.pdf"><img alt="Teaser" src="https://img.shields.io/badge/Teaser-PDF-red"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue"></a>
 </p>
-
-*The paper is under review. A public paper link will be added when available.*
 
 <img src="assets/teaser.png" alt="Overview of the Mem-X benchmark" width="100%">
 
