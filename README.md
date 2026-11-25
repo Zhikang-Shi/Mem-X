@@ -141,7 +141,6 @@ datasets/
 | `levelN.json` | Episode records |
 | `levelN_gt.json` | Ground truth keyed by `episode_id`, with `locations`, `actions`, and `forward_steps` |
 | `protocol_levelN.json` | Evaluation protocol for the level |
-| `EPISODE_SCHEMA.json` | Shared episode field definitions |
 
 The episode counts below follow the role order in the second column:
 
@@ -155,7 +154,9 @@ Habitat launchers read per-role splits from `datasets/levelN/habitat/`. Generate
 
 ```bash
 for level in 1 2 3; do
-  python scripts/materialize_habitat_splits.py --root "$PWD" --level "$level"
+  hf download KangThomas/Mem-X --repo-type dataset \
+    "level${level}.json" "level${level}_gt.json" "protocol_level${level}.json" \
+    --local-dir "datasets/level${level}" || exit 1
 done
 ```
 
